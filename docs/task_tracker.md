@@ -4,98 +4,125 @@
 
 ---
 
+## 🔍 RECOVERY AUDIT (2026-05-17)
+
+Repository was partially generated then manually recovered. **Tracker previously overstated completion.**
+
+| Area | Claimed | Actual on disk |
+|------|---------|----------------|
+| Phase 1 | 100% | ~35% — dirs exist via `.gitkeep`, most files missing |
+| `schema.sql` | Pending | ✅ Complete (~500 lines) |
+| `base_crawler.py` | Skeleton | ✅ Substantial abstract base |
+| `main.py` | Done | ⚠️ Imports ~15 modules that do not exist — **won't boot** |
+| Frontend | Next.js app | ⚠️ Types + constants only (`index.ts`, `constants.ts`) |
+| Docs (11 files) | All done | 4 files: architecture, ai_pipeline, database_design, task_tracker |
+| Docker/scripts | Done | `docker-compose.yml` only; no `docker/`, no `scripts/*.py` |
+| `.env.example` | Done | Empty file |
+
+**Next implementation order:** logging → DB connection/models → auth → queue stubs → bootable API → seed script → Dockerfiles.
+
+---
+
+## 📌 CONTINUATION PLAN (incremental)
+
+### Sprint R1 — Bootable backend ✅ (2026-05-17)
+1. ✅ `utils/logger.py` + `configs/logging_config.py`
+2. ✅ `database/connection.py` + `database/models.py`
+3. ✅ `queue/producer.py`, `websocket/manager.py`, `ai/model_loader.py` (stubs)
+4. ✅ `main.py` — routers deferred; `from main import app` succeeds
+5. ✅ `.env.example` populated
+
+### Sprint R2 — Auth + Supabase ✅ (2026-05-17)
+5. ✅ JWT auth + seed + Supabase MCP migrations
+6. ✅ Frontend shell (login, dashboard, `.env.local`)
+
+### Sprint R3 — Core API ✅ (2026-05-17)
+7. ✅ Targets CRUD + evidence list + analytics dashboard API
+8. ✅ Dashboard + evidence pages wired to live API
+
+### Sprint R4 — Demo data + Targets UI 🔄 (2026-05-17) ← YOU ARE HERE
+9. ✅ `scripts/seed_demo.py` + `/targets` page (list + add)
+10. ⬜ Instagram crawler MVP
+11. ⬜ Queue workers (when Redis enabled)
+
+### Sprint R4+ — Crawler → AI → evidence (per original phases 3–5)
+
+---
+
 ## 🎯 MVP PROGRESS OVERVIEW
 
 ```
-Phase 1: Architecture & Scaffolding  ████████████████████ 100% ✅
-Phase 2: Database & Auth             ████░░░░░░░░░░░░░░░░  20% 🔄
-Phase 3: Platform Crawlers           ░░░░░░░░░░░░░░░░░░░░   0% ⬜
+Phase 1: Architecture & Scaffolding  ███████░░░░░░░░░░░░░  35% 🔄
+Phase 2: Database & Auth             ████████████░░░░░░░░  60% 🔄
+Phase 3: Platform Crawlers           █░░░░░░░░░░░░░░░░░░░   5% 🔄 (base only)
 Phase 4: AI Engine                   ░░░░░░░░░░░░░░░░░░░░   0% ⬜
 Phase 5: Evidence Engine             ░░░░░░░░░░░░░░░░░░░░   0% ⬜
-Phase 6: Dashboard & WebSockets      ░░░░░░░░░░░░░░░░░░░░   0% ⬜
+Phase 6: Dashboard & WebSockets      ████░░░░░░░░░░░░░░░░  20% 🔄 (shell + live stats)
 Phase 7: Reports & Exports           ░░░░░░░░░░░░░░░░░░░░   0% ⬜
 Phase 8: Testing & Polish            ░░░░░░░░░░░░░░░░░░░░   0% ⬜
 
-OVERALL MVP: ████░░░░░░░░░░░░░░░░  ~12%
+OVERALL MVP: █████░░░░░░░░░░░░░░░  ~12%
 ```
 
 ---
 
-## PHASE 1: Architecture & Scaffolding ✅ COMPLETE
+## PHASE 1: Architecture & Scaffolding 🔄 PARTIAL
 
 ### 1.1 Project Foundation
-- ✅ BRAIN.md created (AI agent guide)
-- ✅ task_tracker.md created (this file)
-- ✅ Directory structure created (all 50+ folders)
-- ✅ README.md created
-- ✅ .env.example created
-- ✅ docker-compose.yml created
-- ✅ backend/Dockerfile created
-- ✅ frontend/Dockerfile created
+- ✅ BRAIN.md (2026-05-17 recovery audit)
+- ✅ task_tracker.md (this file)
+- 🔄 Directory structure (placeholder dirs + `.gitkeep` only)
+- ✅ README.md
+- ✅ .env.example (2026-05-17)
+- ✅ docker-compose.yml (references missing Dockerfiles/workers)
+- ⬜ backend/Dockerfile
+- ⬜ frontend/Dockerfile
 
 ### 1.2 Backend Skeleton
-- ✅ backend/main.py (FastAPI app entry point)
-- ✅ backend/requirements.txt
-- ✅ backend/configs/settings.py (Pydantic settings)
-- ✅ backend/configs/logging_config.py
-- ✅ backend/utils/logger.py
-- ✅ backend/crawlers/base_crawler.py (abstract base)
+- ✅ backend/main.py (imports OK; routes deferred until Sprint R2+)
+- ✅ requirements.txt (repo root; not `backend/requirements.txt`)
+- ✅ backend/configs/settings.py
+- ✅ backend/configs/logging_config.py (2026-05-17)
+- ✅ backend/utils/logger.py (2026-05-17)
+- ✅ backend/crawlers/base_crawler.py
 
 ### 1.3 Frontend Skeleton
-- ✅ frontend/package.json
-- ✅ frontend/next.config.js
-- ✅ frontend/tailwind.config.js
-- ✅ frontend/tsconfig.json
-- ✅ frontend/src/app/layout.tsx (root layout)
-- ✅ frontend/src/lib/constants.ts
-- ✅ frontend/src/types/ (all TypeScript interfaces)
+- ✅ frontend/package.json, next.config, tailwind, tsconfig (2026-05-17)
+- ✅ src/app/login, dashboard, layout, globals.css
+- ✅ src/lib/api.ts, auth.ts — wired to FastAPI
+- ✅ src/components/layout (Sidebar, Header, AppShell)
+- ✅ Types moved to frontend/src/types/
 
 ### 1.4 Documentation
 - ✅ docs/architecture.md
-- ✅ docs/system_design.md
 - ✅ docs/ai_pipeline.md
 - ✅ docs/database_design.md
-- ✅ docs/crawler_design.md
-- ✅ docs/deployment_guide.md
-- ✅ docs/api_reference.md
-- ✅ docs/legal_considerations.md
-- ✅ docs/roadmap.md
-- ✅ docs/dashboard_architecture.md
+- ⬜ docs/system_design.md, crawler_design.md, deployment_guide.md, api_reference.md, legal_considerations.md, roadmap.md, dashboard_architecture.md
 
 ### 1.5 DevOps
-- ✅ docker-compose.yml (all services)
-- ✅ docker/backend.Dockerfile
-- ✅ docker/frontend.Dockerfile
-- ✅ docker/nginx.conf
-- ✅ scripts/setup.sh
-- ✅ scripts/seed_db.py (demo data)
+- ✅ docker-compose.yml
+- ⬜ docker/*, scripts/setup.sh
+- ✅ scripts/seed_db.py, scripts/seed_demo.py (2026-05-17)
 
 ---
 
 ## PHASE 2: Database & Authentication 🔄 IN PROGRESS
 
-### 2.1 Database Schema ⬜ NEXT TO BUILD
-- ⬜ backend/database/schema.sql (complete PostgreSQL schema)
-  - Tables: users, target_accounts, crawled_comments, ai_results,
-    evidence_reports, accused_profiles, repeat_offenders,
-    monitoring_logs, region_scores, dashboard_events
-  - All indexes, foreign keys, constraints
-- ⬜ backend/database/models.py (SQLAlchemy ORM models matching schema)
-- ⬜ backend/database/connection.py (async connection pool)
-- ⬜ backend/database/migrations/001_initial_schema.sql
+### 2.1 Database Schema
+- ✅ backend/database/schema.sql (2026-05-17 — complete, 11 tables + views)
+- ✅ backend/database/models.py (2026-05-17)
+- ✅ backend/database/connection.py (2026-05-17)
+- ⬜ backend/database/migrations/001_initial_schema.sql (optional; schema applied via docker init)
 
 ### 2.2 Authentication
-- ⬜ backend/auth/jwt_handler.py
-  - create_access_token(), verify_token(), refresh_token()
-  - HS256 algorithm, configurable expiry
-- ⬜ backend/auth/rbac.py
-  - Roles: ADMIN, ANALYST, VIEWER
-  - Permission decorators
-- ⬜ backend/auth/middleware.py
-  - FastAPI dependency injection for protected routes
-- ⬜ backend/api/routes/auth.py
-  - POST /login, POST /refresh, POST /logout, GET /me
-- ⬜ backend/api/schemas/auth.py (LoginRequest, TokenResponse, UserResponse)
+- ✅ backend/auth/jwt_handler.py (2026-05-17)
+- ✅ backend/auth/passwords.py (bcrypt)
+- ✅ backend/auth/rbac.py
+- ✅ backend/auth/middleware.py
+- ✅ backend/api/routes/auth.py — POST /login, /refresh, /logout, GET /me
+- ✅ backend/api/schemas/auth.py
+- ✅ scripts/seed_db.py
+- ✅ Supabase: `.cursor/mcp.json`, `supabase_migration.sql`, `apply_supabase_schema.py`
 
 ### 2.3 Queue Infrastructure
 - ⬜ backend/queue/producer.py (Redis queue producer)
@@ -104,22 +131,23 @@ OVERALL MVP: ████░░░░░░░░░░░░░░░░  ~12%
 - ⬜ backend/queue/scheduler.py (APScheduler periodic crawl jobs)
 
 ### 2.4 Core API Schemas
-- ⬜ backend/api/schemas/target.py
-- ⬜ backend/api/schemas/evidence.py
-- ⬜ backend/api/schemas/analytics.py
-- ⬜ backend/api/schemas/common.py (PaginatedResponse, FilterParams)
+- ✅ backend/api/schemas/common.py (2026-05-17)
+- ✅ backend/api/schemas/target.py
+- ✅ backend/api/schemas/evidence.py
+- ✅ backend/api/schemas/analytics.py
+
+### 2.5 Core API Routes
+- ✅ backend/api/routes/targets.py — list, create, get, patch, delete
+- ✅ backend/api/routes/evidence.py — list, get (filters)
+- ✅ backend/api/routes/analytics.py — GET /dashboard
+- ✅ Frontend dashboard + evidence pages use live API
 
 ---
 
 ## PHASE 3: Platform Crawlers ⬜ PENDING
 
 ### 3.1 Base Infrastructure
-- ⬜ backend/crawlers/base_crawler.py (expand with full interface)
-  - Abstract methods: start(), stop(), crawl_comments(), take_screenshot()
-  - Built-in retry logic (exponential backoff)
-  - Rate limiting per platform
-  - Queue integration hooks
-  - Session management base
+- 🔄 backend/crawlers/base_crawler.py (abstract base + Playwright session + retry; queue hooks pending)
 
 ### 3.2 Instagram Crawler
 - ⬜ backend/crawlers/instagram/session_manager.py
@@ -279,12 +307,12 @@ OVERALL MVP: ████░░░░░░░░░░░░░░░░  ~12%
   - Cleanup old temporary files
 
 ### 5.5 Evidence API
-- ⬜ backend/api/routes/evidence.py
-  - GET /evidence (paginated, filterable)
-  - GET /evidence/{id}
-  - GET /evidence/{id}/screenshot
-  - DELETE /evidence/{id} (admin only)
-  - POST /evidence/{id}/escalate
+- 🔄 backend/api/routes/evidence.py
+  - ✅ GET /evidence (paginated, filterable)
+  - ✅ GET /evidence/{id}
+  - ⬜ GET /evidence/{id}/screenshot
+  - ⬜ DELETE /evidence/{id} (admin only)
+  - ⬜ POST /evidence/{id}/escalate
 
 ---
 
@@ -305,7 +333,7 @@ OVERALL MVP: ████░░░░░░░░░░░░░░░░  ~12%
   - WebSocket endpoint: /ws/dashboard
 
 ### 6.2 Analytics Backend
-- ⬜ backend/analytics/aggregator.py
+- 🔄 backend/analytics/aggregator.py (logic in routes/analytics.py for now)
   - Dashboard stats computation
   - Cached (Redis, 30s TTL)
   - Returns: total_incidents, active_targets, by_platform, by_severity, by_region
@@ -444,9 +472,14 @@ OVERALL MVP: ████░░░░░░░░░░░░░░░░  ~12%
 - Frontend skeleton
 - All documentation files
 
-### Sprint 2 (Phase 2) — CURRENT 🔄
-**Goal:** Working database + auth + queue
-**Target:** `backend/database/schema.sql` → `models.py` → `connection.py` → auth module → queue
+### Sprint R1 (Recovery) — COMPLETE ✅ (2026-05-17)
+**Goal:** Bootable FastAPI + DB layer
+**Done:** logger, connection, models, queue/redis stub, WS stub, main imports
+
+### Sprint R2 (Phase 2) — CURRENT 🔄
+**Goal:** Supabase + Auth
+**Done:** Supabase settings/SSL, `.cursor/mcp.json`, auth module, `seed_db.py`, `apply_supabase_schema.py`
+**Done (2026-05-17):** MCP migrations 001–005 applied; admin seeded (`admin@patrol.local`)
 
 ---
 
@@ -461,19 +494,16 @@ OVERALL MVP: ████░░░░░░░░░░░░░░░░  ~12%
 
 ---
 
-## 📊 FILE COUNT
+## 📊 FILE COUNT (actual, 2026-05-17)
 
-| Area | Files Created | Files Pending |
-|------|--------------|---------------|
-| Documentation | 11 | 0 |
-| Backend Core | 8 | 45+ |
-| Backend Crawlers | 1 (base) | 25 |
-| AI Engine | 0 | 8 |
-| Frontend | 6 | 30+ |
-| Tests | 0 | 15 |
-| DevOps | 5 | 2 |
+| Area | On disk | Planned (BRAIN map) |
+|------|---------|---------------------|
+| Documentation | 4 + BRAIN + README | 11 |
+| Backend Python | 5 modules | 50+ |
+| Frontend TS | 2 files | 30+ |
+| Tests / Docker / Scripts | 0 code | 20+ |
 
-**Total: ~31 created, ~125 pending**
+**Total: ~16 source files, ~130 planned**
 
 ---
 

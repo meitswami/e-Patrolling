@@ -1,7 +1,7 @@
 # 🧠 PATROL — PROJECT BRAIN
 > **READ THIS FIRST. ALWAYS. BEFORE TOUCHING ANY FILE.**
 > This is the single source of truth for any AI agent (Claude, Codex, Cursor, GPT-4, Gemini) continuing this project.
-> Last Updated: Phase 1 Complete
+> Last Updated: 2026-05-17 — Recovery audit (partial scaffold; see task_tracker)
 
 ---
 
@@ -10,11 +10,13 @@
 **What is this?** PATROL = Predictive Abuse Tracking & Regional Observation Layer
 An enterprise-grade, AI-powered cyber intelligence platform that monitors social media for abuse/harassment targeting women influencers — for use by Cyber Cells, Law Enforcement, and Women Safety Organizations.
 
-**Stack:** FastAPI (Python) + Next.js (TypeScript) + PostgreSQL + Redis + Elasticsearch + Playwright + HuggingFace NLP
+**Stack:** FastAPI (Python) + Next.js (TypeScript) + **Supabase (PostgreSQL)** + Redis + Playwright + HuggingFace NLP
 
-**Current Status:** Phase 1 COMPLETE → Phase 2 IN PROGRESS
+**Current Status:** Recovery scaffold — Phase 1 partial (~35%), Phase 2 started (schema done)
 
-**Where to continue:** Read `docs/task_tracker.md` → find first `⬜ PENDING` task → build it.
+**Where to continue:** Read `docs/task_tracker.md` → **Recovery Audit** → first `⬜ PENDING` task.
+
+**Important:** Many paths in the module map below are *planned*, not on disk. Do not assume files exist — check the repo first.
 
 **Critical rule:** After completing any task, update `docs/task_tracker.md` and `BRAIN.md` status section.
 
@@ -347,8 +349,11 @@ Base URL: `http://localhost:8000/api/v1`
 ## 🔧 ENVIRONMENT VARIABLES (see .env.example)
 
 ```bash
-# Database
-DATABASE_URL=postgresql+asyncpg://patrol:patrol@localhost:5432/patrol_db
+# Supabase Database (Session pooler URI from dashboard)
+DATABASE_URL=postgresql+asyncpg://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
+SUPABASE_URL=https://[ref].supabase.co
+SUPABASE_PROJECT_REF=[ref]
+DATABASE_SSL=true
 
 # Redis
 REDIS_URL=redis://localhost:6379/0
@@ -379,16 +384,15 @@ MAX_CONCURRENT_BROWSERS=3
 
 ## 🚦 CURRENT BUILD STATUS
 
-**Phase 1: Architecture & Scaffolding** → ✅ COMPLETE
-**Phase 2: Database & Auth** → 🔄 IN PROGRESS
-**Phase 3: Platform Crawlers** → ⬜ PENDING
-**Phase 4: AI Engine** → ⬜ PENDING
-**Phase 5: Evidence Engine** → ⬜ PENDING
-**Phase 6: Dashboard & WebSockets** → ⬜ PENDING
-**Phase 7: Reports & Exports** → ⬜ PENDING
-**Phase 8: Testing & Polish** → ⬜ PENDING
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 1 Architecture & Scaffolding | 🔄 ~35% | Docs + core files exist; most dirs are `.gitkeep` only |
+| 2 Database & Auth | 🔄 ~50% | Supabase + schema; auth routes; seed script; MCP configured |
+| 3–8 | ⬜ | See task_tracker |
 
-**See `docs/task_tracker.md` for granular task status.**
+**On disk today:** `BRAIN.md`, `README.md`, `requirements.txt`, `docker-compose.yml`, `.env.example` (empty), `backend/main.py`, `settings.py`, `base_crawler.py`, `schema.sql`, `frontend/index.ts` + `constants.ts`, 4 docs under `docs/`, `ai/prompts/master_prompt.md`.
+
+**See `docs/task_tracker.md` for granular task status and continuation plan.**
 
 ---
 
@@ -404,6 +408,19 @@ MAX_CONCURRENT_BROWSERS=3
 8. **Evidence always has screenshot** — no evidence record without screenshot attempt
 9. **WebSocket events use typed EventEmitter pattern** — see `websocket/events.py`
 10. **Frontend uses SWR for data fetching** — not raw useEffect fetches
+
+---
+
+## 🗄️ SUPABASE SETUP
+
+1. Create a Supabase project (dev/staging — not production data).
+2. Copy **Session pooler** URI into `.env` as `DATABASE_URL` (use `postgresql+asyncpg://` prefix).
+3. Set `SUPABASE_PROJECT_REF` and `SUPABASE_URL` in `.env`.
+4. **Cursor MCP:** `.cursor/mcp.json` points to `https://mcp.supabase.com/mcp?project_ref=...`
+   - Restart Cursor → Settings → Tools & MCP → authorize Supabase (browser OAuth).
+   - Set OS env `SUPABASE_PROJECT_REF` or edit MCP URL with your ref.
+5. Apply schema: MCP `apply_migration` **or** `python scripts/apply_supabase_schema.py`
+6. Seed admin: `python scripts/seed_db.py`
 
 ---
 

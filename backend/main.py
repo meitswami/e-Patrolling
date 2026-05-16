@@ -42,10 +42,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     await init_db()
     logger.info("✅ Database connection pool initialized")
 
-    # Initialize Redis connection
-    from queue.producer import init_redis, close_redis
-    await init_redis()
-    logger.info("✅ Redis connection initialized")
+    # Initialize Redis (optional — not required for auth/API MVP)
+    from task_queue.producer import init_redis, close_redis, is_redis_available
+
+    if await init_redis():
+        logger.info("✅ Redis connection initialized")
+    else:
+        logger.info("ℹ️ Redis skipped — auth and REST API still available")
 
     # Pre-load AI models (lazy, only if enabled)
     if settings.PRELOAD_AI_MODELS:
@@ -121,11 +124,14 @@ app.mount(
 @app.get("/health", tags=["System"])
 async def health_check():
     """System health check for Docker and load balancers."""
+    from task_queue.producer import is_redis_available
+
     return {
         "status": "healthy",
         "service": "PATROL API",
         "version": "1.0.0-MVP",
         "environment": settings.ENVIRONMENT,
+        "redis": "connected" if is_redis_available() else "disabled",
     }
 
 
@@ -146,29 +152,20 @@ async def root():
 # NOTE: Routes are imported here to avoid circular imports.
 # Each module lazily imports DB/service dependencies.
 
-def register_routers():
-    """Register all API route modules."""
+def register_routers() -> None:
+    """Register API routers as modules are implemented (see docs/task_tracker.md)."""
+    PREFIX = "/api/v1"
+
     from api.routes.auth import router as auth_router
     from api.routes.targets import router as targets_router
     from api.routes.evidence import router as evidence_router
     from api.routes.analytics import router as analytics_router
-    from api.routes.reports import router as reports_router
-    from api.routes.search import router as search_router
-    from api.routes.regions import router as regions_router
-    from api.routes.offenders import router as offenders_router
-    from api.routes.ws import router as ws_router
 
-    PREFIX = "/api/v1"
-
-    app.include_router(auth_router,      prefix=f"{PREFIX}/auth",      tags=["Authentication"])
-    app.include_router(targets_router,   prefix=f"{PREFIX}/targets",   tags=["Target Accounts"])
-    app.include_router(evidence_router,  prefix=f"{PREFIX}/evidence",  tags=["Evidence"])
+    app.include_router(auth_router, prefix=f"{PREFIX}/auth", tags=["Authentication"])
+    app.include_router(targets_router, prefix=f"{PREFIX}/targets", tags=["Target Accounts"])
+    app.include_router(evidence_router, prefix=f"{PREFIX}/evidence", tags=["Evidence"])
     app.include_router(analytics_router, prefix=f"{PREFIX}/analytics", tags=["Analytics"])
-    app.include_router(reports_router,   prefix=f"{PREFIX}/reports",   tags=["Reports"])
-    app.include_router(search_router,    prefix=f"{PREFIX}/search",    tags=["Search"])
-    app.include_router(regions_router,   prefix=f"{PREFIX}/regions",   tags=["Region Intelligence"])
-    app.include_router(offenders_router, prefix=f"{PREFIX}/offenders", tags=["Repeat Offenders"])
-    app.include_router(ws_router,        prefix="/ws",                  tags=["WebSocket"])
+    logger.info("Registered API routers under %s", PREFIX)
 
 
 register_routers()

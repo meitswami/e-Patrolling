@@ -102,7 +102,7 @@ services:
       dockerfile: ../docker/backend.Dockerfile
     container_name: patrol_ai_worker
     restart: unless-stopped
-    command: python -m queue.consumer
+    command: python -m task_queue.consumer
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-patrol}:${POSTGRES_PASSWORD:-patrol_secret}@postgres:5432/${POSTGRES_DB:-patrol_db}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
@@ -132,7 +132,7 @@ services:
       dockerfile: ../docker/backend.Dockerfile
     container_name: patrol_crawler
     restart: unless-stopped
-    command: python -m queue.scheduler
+    command: python -m task_queue.scheduler
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-patrol}:${POSTGRES_PASSWORD:-patrol_secret}@postgres:5432/${POSTGRES_DB:-patrol_db}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0

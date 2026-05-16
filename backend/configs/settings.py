@@ -36,10 +36,23 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     DEBUG: bool = False
 
-    # ── Database ─────────────────────────────────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://patrol:patrol_secret@localhost:5432/patrol_db"
+    # ── Database (Supabase PostgreSQL) ───────────────────────
+    # Dashboard → Project Settings → Database → Connection string (URI)
+    # Use Session pooler (port 6543) for serverless; Direct (5432) for long-lived API.
+    DATABASE_URL: str = (
+        "postgresql+asyncpg://postgres:password@db.whzmtzatkxgiomwlwkgy.supabase.co:5432/postgres"
+    )
 
-    # ── Redis ─────────────────────────────────────────────────
+    # Supabase project (for MCP + client SDK)
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_PROJECT_REF: Optional[str] = None
+    SUPABASE_ANON_KEY: Optional[str] = None
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+    DATABASE_SSL: bool = True
+    DATABASE_SSL_VERIFY: bool = False  # Set True in production; False fixes Windows dev cert issues
+
+    # ── Redis (optional until crawlers/queue are built) ─────────
+    REDIS_ENABLED: bool = False
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_PASSWORD: Optional[str] = None
 
@@ -99,7 +112,7 @@ class Settings(BaseSettings):
     GOOGLE_MAPS_API_KEY: Optional[str] = None
 
     # ── First Admin ───────────────────────────────────────────
-    ADMIN_EMAIL: str = "admin@patrol.local"
+    ADMIN_EMAIL: str = "admin@patrol.dev"
     ADMIN_PASSWORD: str = "Patrol@2024!"
     ADMIN_NAME: str = "System Administrator"
 
@@ -127,6 +140,23 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.ENVIRONMENT == "development"
+
+    @property
+    def uses_supabase(self) -> bool:
+        return (
+            self.SUPABASE_URL is not None
+            or self.SUPABASE_PROJECT_REF is not None
+            or "supabase.co" in self.DATABASE_URL
+            or "supabase.com" in self.DATABASE_URL
+        )
+
+    @property
+    def database_url_direct(self) -> str:
+        """DSN for asyncpg/psql (without SQLAlchemy driver prefix)."""
+        url = self.DATABASE_URL
+        if url.startswith("postgresql+asyncpg://"):
+            return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        return url
 
 
 # Singleton — import this everywhere
