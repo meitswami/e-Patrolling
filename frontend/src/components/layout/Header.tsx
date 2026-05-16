@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { LogOut } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { clearSession, getUser } from '@/lib/auth'
@@ -12,7 +13,13 @@ interface HeaderProps {
 
 export function Header({ title, subtitle }: HeaderProps) {
   const router = useRouter()
-  const user: User | null = getUser()
+  const [mounted, setMounted] = useState(false)
+  const [user, setUser] = useState<User | null>(null)
+
+  useEffect(() => {
+    setMounted(true)
+    setUser(getUser())
+  }, [])
 
   function handleLogout() {
     clearSession()
@@ -26,7 +33,7 @@ export function Header({ title, subtitle }: HeaderProps) {
         {subtitle && <p className="mt-0.5 text-sm text-patrol-muted">{subtitle}</p>}
       </div>
       <div className="flex items-center gap-4">
-        {user && (
+        {mounted && user && (
           <div className="text-right text-sm">
             <p className="font-medium text-patrol-text">{user.name}</p>
             <p className="text-xs text-patrol-muted">

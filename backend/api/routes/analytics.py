@@ -6,7 +6,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.schemas.analytics import DashboardStatsResponse
+from api.schemas.analytics import (
+    AnalyticsOverview,
+    DashboardStatsResponse,
+    PlatformBreakdown,
+    SeverityBreakdown,
+)
 from auth.middleware import get_current_user
 from database.connection import get_session
 from database.models import (
@@ -64,3 +69,31 @@ async def get_dashboard_stats(
         total_evidence=total_evidence or 0,
         live_monitoring=(monitoring_count or 0) > 0,
     )
+
+
+@router.get("/overview", response_model=AnalyticsOverview)
+async def get_analytics_overview(
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(get_current_user),
+) -> AnalyticsOverview:
+    """Dashboard stats plus severity and platform breakdowns."""
+    dashboard = await get_dashboard_stats(session=session, _user=_user)
+
+    severity_rows = await session.execute(
+        select(EvidenceReport.severity_level, func.count())
+        .group_by(EvidenceReport.severity_level)
+    )
+    sev = SeverityBreakdown()
+    for level, count in severity_rows.all():
+        setattr(sev, level.value, count)
+
+    platform_rows = await session.execute(
+        select(EvidenceReport.platform, func.count())
+        .group_by(EvidenceReport.platform)
+        .order_by(func.count().desc())
+    )
+    platforms = [
+        PlatformBreakdown(platform=row[0].value, count=row[1]) for row in platform_rows.all()
+    ]
+
+    return AnalyticsOverview(dashboard=dashboard, by_severity=sev, by_platform=platforms)

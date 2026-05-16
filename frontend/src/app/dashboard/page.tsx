@@ -1,11 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Activity, AlertTriangle, Shield, Users } from 'lucide-react'
+import { ClientOnly } from '@/components/ClientOnly'
 import { AppShell } from '@/components/layout/AppShell'
-import { getDashboardStats, getHealth, getMe } from '@/lib/api'
+import { PlatformMonitorGrid } from '@/components/platforms/PlatformMonitorGrid'
+import { getCrawlerStatus, getDashboardStats, getHealth, getMe } from '@/lib/api'
+import type { CrawlerStatus } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
+import { connectDashboardWs, type WsMessage } from '@/lib/ws'
 import type { DashboardStats, HealthResponse, User } from '@/types'
 
 export default function DashboardPage() {
@@ -14,6 +18,18 @@ export default function DashboardPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [liveFeed, setLiveFeed] = useState<string[]>([])
+  const [wsConnected, setWsConnected] = useState(false)
+  const [crawlerStatus, setCrawlerStatus] = useState<CrawlerStatus | null>(null)
+
+  const refreshStats = useCallback(async () => {
+    try {
+      const dashboard = await getDashboardStats()
+      setStats(dashboard)
+    } catch {
+      /* ignore background refresh errors */
+    }
+  }, [])
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -23,21 +39,46 @@ export default function DashboardPage() {
 
     async function load() {
       try {
-        const [me, apiHealth, dashboard] = await Promise.all([
+        const [me, apiHealth, dashboard, crawlers] = await Promise.all([
           getMe(),
           getHealth(),
           getDashboardStats(),
+          getCrawlerStatus(),
         ])
         setUser(me)
         setHealth(apiHealth)
         setStats(dashboard)
+        setCrawlerStatus(crawlers)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load dashboard')
       }
     }
 
     load()
-  }, [router])
+
+    const disconnect = connectDashboardWs((msg: WsMessage) => {
+      if (msg.type === 'connected') {
+        setWsConnected(true)
+        return
+      }
+      if (msg.type === 'evidence_created') {
+        setLiveFeed((prev) => [
+          `New ${msg.data.severity_level} evidence: ${msg.data.evidence_id}`,
+          ...prev.slice(0, 9),
+        ])
+        refreshStats()
+      }
+      if (msg.type === 'crawl_completed') {
+        setLiveFeed((prev) => [
+          `Crawl @${msg.data.target_username}: +${msg.data.comments_new} comments`,
+          ...prev.slice(0, 9),
+        ])
+        refreshStats()
+      }
+    })
+
+    return disconnect
+  }, [router, refreshStats])
 
   const statCards = stats
     ? [
@@ -51,7 +92,9 @@ export default function DashboardPage() {
   return (
     <AppShell
       title="Command Center"
-      subtitle={user ? `Welcome back, ${user.name}` : 'Loading session…'}
+      subtitle={
+        user ? `Welcome back, ${user.name}` : 'Loading session…'
+      }
     >
       {error && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
@@ -59,6 +102,11 @@ export default function DashboardPage() {
         </p>
       )}
 
+      <ClientOnly
+        fallback={
+          <p className="text-sm text-patrol-muted">Connecting to PATROL API…</p>
+        }
+      >
       {health && (
         <div className="mb-6 flex items-center gap-3 rounded-lg border border-patrol-border bg-patrol-card px-4 py-3">
           <span
@@ -71,6 +119,12 @@ export default function DashboardPage() {
             <span className="mx-2 text-patrol-muted">·</span>
             <span className="text-patrol-muted">
               {health.service} v{health.version} · Redis: {health.redis}
+              {wsConnected && (
+                <>
+                  <span className="mx-2">·</span>
+                  <span className="text-patrol-accent">Live feed connected</span>
+                </>
+              )}
               {stats?.live_monitoring && (
                 <>
                   <span className="mx-2">·</span>
@@ -79,6 +133,15 @@ export default function DashboardPage() {
               )}
             </span>
           </div>
+        </div>
+      )}
+
+      {crawlerStatus?.platforms && crawlerStatus.platforms.length > 0 && (
+        <div className="mb-6">
+          <PlatformMonitorGrid
+            platforms={crawlerStatus.platforms}
+            demoMode={crawlerStatus.demo_mode}
+          />
         </div>
       )}
 
@@ -102,19 +165,33 @@ export default function DashboardPage() {
         })}
       </div>
 
+      {liveFeed.length > 0 && (
+        <div className="mt-6 rounded-xl border border-patrol-border bg-patrol-card p-4">
+          <h2 className="font-mono text-sm text-patrol-accent">Live feed</h2>
+          <ul className="mt-2 space-y-1">
+            {liveFeed.map((line, i) => (
+              <li key={`${line}-${i}`} className="text-xs text-patrol-muted">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {!stats && !error && (
-        <p className="text-sm text-patrol-muted">Loading statistics from Supabase…</p>
+        <p className="mt-4 text-sm text-patrol-muted">Loading statistics from Supabase…</p>
       )}
 
       {stats && stats.total_evidence === 0 && (
         <div className="mt-6 rounded-xl border border-dashed border-patrol-border bg-patrol-surface/50 p-8 text-center">
           <h2 className="font-mono text-lg text-patrol-accent">No evidence yet</h2>
           <p className="mx-auto mt-2 max-w-lg text-sm text-patrol-muted">
-            Add target accounts under Settings, then run crawlers and the AI pipeline to populate
-            evidence. Dashboard stats are live from your database.
+            Run a crawl from Live Monitoring to populate evidence. Stats update in real time when
+            WebSocket is connected.
           </p>
         </div>
       )}
+      </ClientOnly>
     </AppShell>
   )
 }

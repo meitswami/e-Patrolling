@@ -1,0 +1,24 @@
+{
+  "recommended_by_hf_mcp": "2026-05-17",
+  "models": {
+    "english_toxic": {
+      "id": "unitary/toxic-bert",
+      "task": "text-classification",
+      "env": "TOXIC_BERT_MODEL",
+      "notes": "Default English toxicity; 220k+ downloads"
+    },
+    "multilingual_toxic": {
+      "id": "textdetox/bert-multilingual-toxicity-classifier",
+      "task": "text-classification",
+      "env": "MULTILINGUAL_TOXIC_MODEL",
+      "languages": ["en", "hi", "hinglish", "ar", "es", "ru"],
+      "notes": "Preferred for PATROL Hindi/English/Hinglish monitoring"
+    },
+    "hindi_hate": {
+      "id": "Hate-speech-CNERG/dehatebert-mono-indic",
+      "task": "text-classification",
+      "env": "INDIC_ABUSE_MODEL",
+      "notes": "Hindi hate speech; enable USE_INDICBERT"
+    }
+  }
+}

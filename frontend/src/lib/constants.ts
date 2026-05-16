@@ -28,5 +28,7 @@ export const PLATFORM_CONFIG: Record<Platform, { label: string; icon: string }> 
   whatsapp: { label: 'WhatsApp', icon: '💬' },
 }
 
+export { ACTIVE_PATROL_PLATFORMS, ROADMAP_PLATFORMS } from '@/lib/platforms'
+
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 export const API_PREFIX = '/api/v1'

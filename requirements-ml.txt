@@ -1,0 +1,11 @@
+# ============================================================
+# PATROL — Optional ML models (large download)
+# Install ONLY when USE_ML_CLASSIFIER=true or USE_INDICBERT=true
+# ============================================================
+# pip install -r requirements-ml.txt
+#
+# Python 3.14: torch 2.9+ required (2.2.x is not published for 3.14)
+
+torch>=2.9.0
+transformers>=4.37.2
+sentence-transformers>=2.3.1

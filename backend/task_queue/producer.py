@@ -71,3 +71,10 @@ def get_redis() -> aioredis.Redis:
             "or use features that do not require the task queue."
         )
     return _redis
+
+
+async def enqueue_task(queue_key: str, payload: str) -> None:
+    """Push a serialized task onto a Redis list."""
+    redis = get_redis()
+    await redis.lpush(queue_key, payload)
+    logger.debug("Enqueued task on %s", queue_key)

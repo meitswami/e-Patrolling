@@ -467,6 +467,19 @@ CREATE TRIGGER update_repeat_updated_at BEFORE UPDATE ON repeat_offenders
 
 
 -- ============================================================
+-- SYSTEM SETTINGS (admin panel — overrides .env at runtime)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS system_settings (
+    key             VARCHAR(100) PRIMARY KEY,
+    value           TEXT NOT NULL DEFAULT '',
+    is_secret       BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_by      VARCHAR(36),
+    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+
+-- ============================================================
 -- VIEWS (for convenience)
 -- ============================================================
 

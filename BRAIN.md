@@ -12,7 +12,7 @@ An enterprise-grade, AI-powered cyber intelligence platform that monitors social
 
 **Stack:** FastAPI (Python) + Next.js (TypeScript) + **Supabase (PostgreSQL)** + Redis + Playwright + HuggingFace NLP
 
-**Current Status:** Recovery scaffold — Phase 1 partial (~35%), Phase 2 started (schema done)
+**Current Status:** MVP ~38% — patrol active: IG, FB, TW, Threads; roadmap: LinkedIn, Telegram, WhatsApp, Signal, Threema (2026-05-17)
 
 **Where to continue:** Read `docs/task_tracker.md` → **Recovery Audit** → first `⬜ PENDING` task.
 

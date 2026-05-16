@@ -11,3 +11,4 @@ frontend/out/
 storage/
 ai_models/cache/
 .DS_Store
+.code-bridge/

@@ -3,10 +3,17 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
-import { SEVERITY_CONFIG } from '@/lib/constants'
+import { API_BASE_URL, SEVERITY_CONFIG } from '@/lib/constants'
 import { listEvidence } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import type { EvidenceListItem } from '@/types'
+
+function evidenceImageUrl(screenshotPath: string | null): string | null {
+  if (!screenshotPath) return null
+  const base = API_BASE_URL.replace(/\/$/, '')
+  const clean = screenshotPath.replace(/^\/+/, '').replace(/^storage\//, '')
+  return `${base}/storage/${clean}`
+}
 
 export default function EvidencePage() {
   const router = useRouter()
@@ -58,21 +65,44 @@ export default function EvidencePage() {
       <div className="space-y-3">
         {items.map((item) => {
           const sev = SEVERITY_CONFIG[item.severity_level]
+          const imgUrl = evidenceImageUrl(item.screenshot_path)
           return (
             <article
               key={item.id}
               className="rounded-xl border border-patrol-border bg-patrol-card p-4 transition hover:border-patrol-accent/20"
             >
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="font-mono text-patrol-accent">{item.evidence_id}</span>
-                <span className={`rounded border px-2 py-0.5 ${sev.className}`}>{sev.label}</span>
-                <span className="text-patrol-muted">{item.platform}</span>
-                <span className="text-patrol-muted">Risk {item.risk_score}</span>
+              <div className="flex flex-col gap-4 lg:flex-row">
+                {imgUrl && (
+                  <a
+                    href={imgUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block shrink-0 overflow-hidden rounded-lg border border-patrol-border bg-patrol-surface"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imgUrl}
+                      alt={`Evidence ${item.evidence_id}`}
+                      className="h-36 w-full max-w-xs object-cover object-top lg:h-40"
+                    />
+                  </a>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-mono text-patrol-accent">{item.evidence_id}</span>
+                    <span className={`rounded border px-2 py-0.5 ${sev.className}`}>{sev.label}</span>
+                    <span className="text-patrol-muted">{item.platform}</span>
+                    <span className="text-patrol-muted">Risk {item.risk_score}</span>
+                  </div>
+                  <p className="mt-2 line-clamp-3 text-sm text-patrol-text">{item.comment_text}</p>
+                  <p className="mt-2 text-xs text-patrol-muted">
+                    Target: {item.target_username ?? '—'} · Accused: {item.accused_username ?? '—'}
+                  </p>
+                  {!imgUrl && (
+                    <p className="mt-2 text-xs text-patrol-muted">No screenshot artifact</p>
+                  )}
+                </div>
               </div>
-              <p className="mt-2 line-clamp-2 text-sm text-patrol-text">{item.comment_text}</p>
-              <p className="mt-2 text-xs text-patrol-muted">
-                Target: {item.target_username ?? '—'} · Accused: {item.accused_username ?? '—'}
-              </p>
             </article>
           )
         })}

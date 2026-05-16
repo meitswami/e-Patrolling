@@ -145,6 +145,159 @@ export async function createTarget(body: CreateTargetPayload): Promise<TargetAcc
   )
 }
 
+export interface PlatformPatrolInfo {
+  id: string
+  label: string
+  status: 'active' | 'roadmap'
+  patrol_enabled: boolean
+  target_count: number
+  monitoring_count: number
+}
+
+export interface CrawlerStatus {
+  supported_platforms: string[]
+  platforms: PlatformPatrolInfo[]
+  redis_enabled: boolean
+  scheduler_enabled: boolean
+  crawl_interval_seconds: number
+  demo_mode: boolean
+  scheduler_is_running?: boolean
+  scheduler_last_run_at?: string | null
+  scheduler_last_run_status?: string | null
+  scheduler_last_run_message?: string | null
+  evidence_screenshot_mode?: string
+}
+
+export interface CrawlLogItem {
+  id: string
+  target_id: string | null
+  platform: string
+  comments_found: number
+  comments_new: number
+  abusive_detected: number
+  critical_detected: number
+  success: boolean
+  error_message: string | null
+  duration_seconds: number | null
+  started_at: string
+  completed_at: string | null
+}
+
+export interface CrawlResultSummary {
+  target_id: string
+  target_username?: string
+  platform?: string
+  success: boolean
+  comments_new: number
+  abusive_detected: number
+  critical_detected?: number
+  error?: string
+}
+
+export async function getCrawlerStatus(): Promise<CrawlerStatus> {
+  return request<CrawlerStatus>('/crawlers/status', {}, true)
+}
+
+export async function listCrawlLogs(limit = 20): Promise<CrawlLogItem[]> {
+  return request<CrawlLogItem[]>(`/crawlers/logs?limit=${limit}`, {}, true)
+}
+
+export async function runCrawlAll(): Promise<CrawlResultSummary[]> {
+  return request<CrawlResultSummary[]>('/crawlers/run-all', { method: 'POST' }, true)
+}
+
+export async function runCrawlTarget(targetId: string): Promise<CrawlResultSummary> {
+  return request<CrawlResultSummary>(`/crawlers/run/${targetId}`, { method: 'POST' }, true)
+}
+
+export interface OffenderListItem {
+  id: string
+  accused_id: string
+  username: string
+  platform: Platform
+  total_offenses: number
+  critical_count: number
+  priority_score: number
+  status: string
+  last_offense_at: string | null
+}
+
+export interface AnalyticsOverview {
+  dashboard: DashboardStats
+  by_severity: { LOW: number; MEDIUM: number; HIGH: number; CRITICAL: number }
+  by_platform: { platform: string; count: number }[]
+}
+
+export interface RegionSummary {
+  region: string
+  target_count: number
+  accused_count: number
+  avg_confidence: number
+}
+
+export async function getAnalyticsOverview(): Promise<AnalyticsOverview> {
+  return request<AnalyticsOverview>('/analytics/overview', {}, true)
+}
+
+export async function listRegions(): Promise<RegionSummary[]> {
+  return request<RegionSummary[]>('/regions/summary', {}, true)
+}
+
+export async function listOffenders(
+  page = 1,
+  pageSize = 20,
+): Promise<PaginatedResponse<OffenderListItem>> {
+  return request<PaginatedResponse<OffenderListItem>>(
+    `/offenders?page=${page}&page_size=${pageSize}`,
+    {},
+    true,
+  )
+}
+
+export interface AiStatus {
+  keyword_engine: boolean
+  local_ml: boolean
+  multilingual_model: string | null
+  indic_model: string | null
+  hf_inference_api: boolean
+  hf_api_configured: boolean
+  abuse_threshold: number
+}
+
+export interface CrawlerSettings {
+  crawler_demo_mode: boolean
+  instagram_username: string
+  instagram_password_set: boolean
+  instagram_password_configured_in_db: boolean
+  evidence_screenshot_mode: string
+  source: string
+}
+
+export interface CrawlerSettingsUpdate {
+  crawler_demo_mode?: boolean
+  instagram_username?: string
+  instagram_password?: string
+  evidence_screenshot_mode?: 'pillow' | 'playwright' | 'both'
+}
+
+export async function getAiStatus(): Promise<AiStatus> {
+  return request<AiStatus>('/ai/status', {}, true)
+}
+
+export async function getCrawlerSettings(): Promise<CrawlerSettings> {
+  return request<CrawlerSettings>('/settings/crawler', {}, true)
+}
+
+export async function updateCrawlerSettings(
+  body: CrawlerSettingsUpdate,
+): Promise<CrawlerSettings> {
+  return request<CrawlerSettings>(
+    '/settings/crawler',
+    { method: 'PUT', body: JSON.stringify(body) },
+    true,
+  )
+}
+
 export async function getHealth(): Promise<HealthResponse> {
   let res: Response
   try {

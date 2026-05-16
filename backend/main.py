@@ -42,6 +42,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     await init_db()
     logger.info("✅ Database connection pool initialized")
 
+    from database.connection import async_session_factory, engine as db_engine
+    from database.models import SystemSetting
+    from services import system_settings as sys_settings
+
+    if async_session_factory and db_engine:
+        async with db_engine.begin() as conn:
+            await conn.run_sync(
+                lambda sync_conn: SystemSetting.__table__.create(sync_conn, checkfirst=True)
+            )
+        async with async_session_factory() as session:
+            await sys_settings.load_cache(session)
+            await session.commit()
+        logger.info("✅ System settings loaded from database")
+
     # Initialize Redis (optional — not required for auth/API MVP)
     from task_queue.producer import init_redis, close_redis, is_redis_available
 
@@ -60,12 +74,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     from websocket.manager import ws_manager
     logger.info("✅ WebSocket manager ready")
 
+    from task_queue.consumer import start_background_consumer
+    from task_queue.scheduler import start_scheduler
+
+    start_background_consumer()
+    if settings.CRAWLER_SCHEDULER_ENABLED:
+        start_scheduler()
+        logger.info("✅ Crawl scheduler started")
+
     logger.info("✅ PATROL Backend is ready — monitoring begins")
 
     yield  # Application runs here
 
     # Graceful shutdown
     logger.info("🛑 PATROL Backend shutting down...")
+    from task_queue.consumer import stop_background_consumer
+    from task_queue.scheduler import stop_scheduler
+
+    stop_scheduler()
+    stop_background_consumer()
     await close_db()
     await close_redis()
     logger.info("✅ Cleanup complete")
@@ -160,11 +187,25 @@ def register_routers() -> None:
     from api.routes.targets import router as targets_router
     from api.routes.evidence import router as evidence_router
     from api.routes.analytics import router as analytics_router
+    from api.routes.crawlers import router as crawlers_router
+    from api.routes.offenders import router as offenders_router
+    from api.routes.ai import router as ai_router
+    from api.routes.regions import router as regions_router
+    from api.routes.reports import router as reports_router
+    from api.routes.settings import router as settings_router
+    from api.routes.websocket import router as ws_router
 
     app.include_router(auth_router, prefix=f"{PREFIX}/auth", tags=["Authentication"])
     app.include_router(targets_router, prefix=f"{PREFIX}/targets", tags=["Target Accounts"])
     app.include_router(evidence_router, prefix=f"{PREFIX}/evidence", tags=["Evidence"])
     app.include_router(analytics_router, prefix=f"{PREFIX}/analytics", tags=["Analytics"])
+    app.include_router(crawlers_router, prefix=f"{PREFIX}/crawlers", tags=["Crawlers"])
+    app.include_router(offenders_router, prefix=f"{PREFIX}/offenders", tags=["Offenders"])
+    app.include_router(reports_router, prefix=f"{PREFIX}/reports", tags=["Reports"])
+    app.include_router(regions_router, prefix=f"{PREFIX}/regions", tags=["Regions"])
+    app.include_router(ai_router, prefix=f"{PREFIX}/ai", tags=["AI"])
+    app.include_router(settings_router, prefix=f"{PREFIX}/settings", tags=["Settings"])
+    app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
     logger.info("Registered API routers under %s", PREFIX)
 
 

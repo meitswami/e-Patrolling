@@ -1,69 +1,72 @@
 # ============================================================
-# PATROL Backend — Python Dependencies
+# PATROL Backend — Core dependencies
 # ============================================================
-# Install: pip install -r requirements.txt
-# Dev install: pip install -r requirements.txt -r requirements-dev.txt
+# Recommended: Python 3.12 or 3.13 (best wheel support)
+# Python 3.14: use versions below (pre-built wheels, no Rust build)
+#
+# From repo root:
+#   python -m venv .venv
+#   .\.venv\Scripts\Activate.ps1
+#   pip install -U pip
+#   pip install -r requirements.txt
+#   python -m playwright install chromium
+#
+# Optional ML (USE_ML_CLASSIFIER / USE_INDICBERT in .env):
+#   pip install -r requirements-ml.txt
 
 # ── Web Framework ─────────────────────────────────────────
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-python-multipart==0.0.9
+fastapi>=0.115.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
 
 # ── Settings & Config ─────────────────────────────────────
-pydantic==2.6.0
-pydantic-settings==2.1.0
-python-dotenv==1.0.1
+pydantic>=2.12.0
+pydantic-settings>=2.6.0
+email-validator>=2.0.0
+python-dotenv>=1.0.1
 
 # ── Database ──────────────────────────────────────────────
-sqlalchemy[asyncio]==2.0.25
-asyncpg==0.29.0
-alembic==1.13.1
+sqlalchemy[asyncio]>=2.0.25
+asyncpg>=0.30.0
+alembic>=1.13.1
 
 # ── Redis / Queue ─────────────────────────────────────────
-redis==5.0.1
-aioredis==2.0.1
-apscheduler==3.10.4
+redis>=5.0.1
+aioredis>=2.0.1
+apscheduler>=3.10.4
 
 # ── Authentication ────────────────────────────────────────
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.1.0
+passlib[bcrypt]>=1.7.4
 
 # ── Rate Limiting ─────────────────────────────────────────
-slowapi==0.1.9
+slowapi>=0.1.9
 
 # ── Web Crawling ──────────────────────────────────────────
-playwright==1.41.0
-# After install, run: playwright install chromium
+playwright>=1.41.0
 
 # ── HTTP Client ───────────────────────────────────────────
-httpx==0.26.0
-aiohttp==3.9.1
+httpx>=0.26.0
+aiohttp>=3.9.1
 
-# ── AI / NLP ──────────────────────────────────────────────
-transformers==4.37.2
-torch==2.2.0
-sentence-transformers==2.3.1
-langdetect==1.0.9
-# Optional: detoxify==0.5.2
+# ── AI (lightweight — keyword classifier) ─────────────────
+langdetect>=1.0.9
 
-# ── NLP Utilities ─────────────────────────────────────────
-# spacy==3.7.2  # Uncomment for NER (large download)
-# For Hindi NER: python -m spacy download xx_ent_wiki_sm
-
-# ── Report Generation ─────────────────────────────────────
-openpyxl==3.1.2
-reportlab==4.1.0
-Pillow==10.2.0  # Image processing for screenshots in reports
+# ── Report Generation & evidence screenshots ──────────────
+openpyxl>=3.1.2
+reportlab>=4.1.0
+Pillow>=10.2.0
 
 # ── Data Processing ───────────────────────────────────────
-pandas==2.2.0
-numpy==1.26.3
+pandas>=2.2.0
+numpy>=1.26.0
 
 # ── Logging ───────────────────────────────────────────────
-structlog==24.1.0
-python-json-logger==2.0.7
+structlog>=24.1.0
+python-json-logger>=2.0.7
 
 # ── Utilities ─────────────────────────────────────────────
-python-dateutil==2.8.2
-pytz==2024.1
-shortuuid==1.0.11
+python-dateutil>=2.8.2
+pytz>=2024.1
+shortuuid>=1.0.11

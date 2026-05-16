@@ -12,6 +12,7 @@ from api.schemas.target import TargetCreate, TargetResponse, TargetUpdate
 from auth.middleware import get_current_user
 from auth.rbac import require_analyst
 from database.connection import get_session
+from crawlers.registry import is_patrol_platform
 from database.models import PlatformType, TargetAccount, User
 
 router = APIRouter()
@@ -60,6 +61,14 @@ async def create_target(
     current_user: User = Depends(require_analyst),
 ) -> TargetResponse:
     """Add a target account to monitor."""
+    if not is_patrol_platform(body.platform):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Patrol is not enabled for {body.platform.value}. "
+                "Use Instagram, Facebook, Twitter, or Threads."
+            ),
+        )
     existing = await session.execute(
         select(TargetAccount).where(
             TargetAccount.username == body.username,

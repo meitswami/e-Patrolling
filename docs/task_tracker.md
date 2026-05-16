@@ -40,10 +40,37 @@ Repository was partially generated then manually recovered. **Tracker previously
 7. ✅ Targets CRUD + evidence list + analytics dashboard API
 8. ✅ Dashboard + evidence pages wired to live API
 
-### Sprint R4 — Demo data + Targets UI 🔄 (2026-05-17) ← YOU ARE HERE
-9. ✅ `scripts/seed_demo.py` + `/targets` page (list + add)
-10. ⬜ Instagram crawler MVP
-11. ⬜ Queue workers (when Redis enabled)
+### Sprint R4 — Crawler + pipeline ✅ (2026-05-17)
+9. ✅ `scripts/seed_demo.py` + `/targets` page
+10. ✅ Instagram crawler + pipeline + keyword AI + evidence auto-create
+11. ✅ Queue tasks/consumer/scheduler (inline fallback without Redis)
+
+### Sprint R5 — AI + live + export ✅ (2026-05-17)
+12. ✅ Hybrid classifier (keyword + optional toxic-bert), language detector
+13. ✅ Twitter crawler (demo + API v2) + WebSocket live feed on dashboard
+14. ✅ Excel evidence export (`/reports/evidence/export.xlsx`)
+
+### Sprint R6 — Platforms + evidence artifacts ✅ (2026-05-17)
+15. ✅ Indic DeBERTa hook (`USE_INDICBERT`, `dehatebert-mono-indic`) + hybrid classifier
+16. ✅ Facebook + Threads crawlers (demo mode)
+17. ✅ PDF export + Pillow evidence screenshots (`CAPTURE_EVIDENCE_SCREENSHOTS`)
+
+### Sprint R7 — HF + platform scope 🔄 (2026-05-17)
+18. ✅ HF Hub models catalog (`ai_models/configs/models.json`) via MCP search
+19. ✅ HF Inference API path + multilingual toxic model default
+20. ✅ Telegram crawler code kept; **moved to roadmap** (not in active patrol registry)
+21. ✅ Hydration fix (Header + dashboard ClientOnly)
+22. ✅ **MVP patrol platforms:** Instagram, Facebook, Twitter, Threads only
+23. ✅ Dashboard + Live Monitoring platform cards (active vs planned)
+24. ✅ Target create restricted to patrol-enabled platforms; layout CSS fallback
+
+### Sprint R8 — IN PROGRESS (2026-05-17)
+22. ⬜ WhatsApp crawler (deferred)
+23. ✅ Playwright screenshot path wired (pipeline + `EVIDENCE_SCREENSHOT_MODE`; IG live when demo off)
+24. ✅ Scheduler hardening (overlap lock, max_instances=1, last-run status on API/UI)
+25. ✅ Evidence feed thumbnails + per-target **Run crawl** on Targets page
+26. ✅ Admin Settings UI → `system_settings` table (crawler demo, IG creds, screenshot mode)
+27. ⬜ Unit tests + Docker prod images
 
 ### Sprint R4+ — Crawler → AI → evidence (per original phases 3–5)
 
@@ -54,14 +81,14 @@ Repository was partially generated then manually recovered. **Tracker previously
 ```
 Phase 1: Architecture & Scaffolding  ███████░░░░░░░░░░░░░  35% 🔄
 Phase 2: Database & Auth             ████████████░░░░░░░░  60% 🔄
-Phase 3: Platform Crawlers           █░░░░░░░░░░░░░░░░░░░   5% 🔄 (base only)
-Phase 4: AI Engine                   ░░░░░░░░░░░░░░░░░░░░   0% ⬜
-Phase 5: Evidence Engine             ░░░░░░░░░░░░░░░░░░░░   0% ⬜
-Phase 6: Dashboard & WebSockets      ████░░░░░░░░░░░░░░░░  20% 🔄 (shell + live stats)
-Phase 7: Reports & Exports           ░░░░░░░░░░░░░░░░░░░░   0% ⬜
+Phase 3: Platform Crawlers           ██████████░░░░░░░░░░  50% 🔄 (IG, FB, TW, Threads — patrol active)
+Phase 4: AI Engine                   ████████░░░░░░░░░░░░  40% 🔄 (+ Indic DeBERTa opt-in)
+Phase 5: Evidence Engine             ██████░░░░░░░░░░░░░░  30% 🔄 (screenshot cards)
+Phase 6: Dashboard & WebSockets      ██████████░░░░░░░░░░  50% 🔄 (analytics + regions UI)
+Phase 7: Reports & Exports           ██████░░░░░░░░░░░░░░  30% 🔄 (CSV + PDF)
 Phase 8: Testing & Polish            ░░░░░░░░░░░░░░░░░░░░   0% ⬜
 
-OVERALL MVP: █████░░░░░░░░░░░░░░░  ~12%
+OVERALL MVP: █████████████░░░░░░░  ~42%
 ```
 
 ---
@@ -125,10 +152,10 @@ OVERALL MVP: █████░░░░░░░░░░░░░░░  ~12%
 - ✅ Supabase: `.cursor/mcp.json`, `supabase_migration.sql`, `apply_supabase_schema.py`
 
 ### 2.3 Queue Infrastructure
-- ⬜ backend/queue/producer.py (Redis queue producer)
-- ⬜ backend/queue/consumer.py (async worker loop)
-- ⬜ backend/queue/tasks.py (task type definitions + handlers)
-- ⬜ backend/queue/scheduler.py (APScheduler periodic crawl jobs)
+- ✅ backend/task_queue/producer.py (2026-05-17)
+- ✅ backend/task_queue/consumer.py
+- ✅ backend/task_queue/tasks.py
+- ✅ backend/task_queue/scheduler.py
 
 ### 2.4 Core API Schemas
 - ✅ backend/api/schemas/common.py (2026-05-17)
@@ -144,31 +171,20 @@ OVERALL MVP: █████░░░░░░░░░░░░░░░  ~12%
 
 ---
 
-## PHASE 3: Platform Crawlers ⬜ PENDING
+## PHASE 3: Platform Crawlers 🔄 IN PROGRESS
 
 ### 3.1 Base Infrastructure
-- 🔄 backend/crawlers/base_crawler.py (abstract base + Playwright session + retry; queue hooks pending)
+- ✅ backend/crawlers/base_crawler.py
+- ✅ backend/crawlers/registry.py
+- ✅ backend/crawlers/pipeline.py (crawl → classify → evidence)
 
 ### 3.2 Instagram Crawler
-- ⬜ backend/crawlers/instagram/session_manager.py
-  - Cookie-based session persistence
-  - Session validity checker
-  - Login flow (headless Playwright)
-- ⬜ backend/crawlers/instagram/adapter.py
-  - Main orchestrator, inherits BaseCrawler
-  - Public post monitoring
-  - Comment enumeration
-- ⬜ backend/crawlers/instagram/parser.py
-  - Extract: comment text, username, timestamp, profile URL, avatar
-  - Handle pagination, load-more
-- ⬜ backend/crawlers/instagram/comment_monitor.py
-  - Polling loop (configurable interval)
-  - New comment detection (diff from last crawl)
-  - Push to queue on new content
-- ⬜ backend/crawlers/instagram/screenshot.py
-  - Playwright screenshot of comment in context
-  - Crop to comment element
-  - Save to storage/evidence/instagram/YYYY/MM/DD/
+- ✅ backend/crawlers/instagram/session_manager.py (2026-05-17)
+- ✅ backend/crawlers/instagram/adapter.py (demo mode + Playwright live)
+- ✅ backend/crawlers/instagram/parser.py
+- ✅ backend/crawlers/instagram/comment_monitor.py
+- ✅ backend/crawlers/instagram/screenshot.py
+- ✅ scripts/run_crawl.py
 
 ### 3.3 Twitter/X Crawler
 - ⬜ backend/crawlers/twitter/session_manager.py
@@ -202,18 +218,18 @@ OVERALL MVP: █████░░░░░░░░░░░░░░░  ~12%
 - ⬜ backend/crawlers/whatsapp/comment_monitor.py
 
 ### 3.8 Crawler Management API
-- ⬜ backend/api/routes/crawlers.py
-  - POST /crawlers/start/{platform}/{target_id}
-  - POST /crawlers/stop/{platform}/{target_id}
-  - GET /crawlers/status
-  - GET /crawlers/logs
+- ✅ backend/api/routes/crawlers.py (2026-05-17)
+  - ✅ POST /crawlers/start/{platform}/{target_id}
+  - ✅ POST /crawlers/run/{target_id}, POST /run-all
+  - ✅ GET /crawlers/status, GET /crawlers/logs
+  - ⬜ POST /crawlers/stop (not implemented)
 
 ---
 
-## PHASE 4: AI Abuse Detection Engine ⬜ PENDING
+## PHASE 4: AI Abuse Detection Engine 🔄 IN PROGRESS
 
 ### 4.1 Model Infrastructure
-- ⬜ backend/ai/model_loader.py
+- 🔄 backend/ai/model_loader.py (stub; HF load pending Sprint R5)
   - Lazy loading (load on first use, not import)
   - Model registry (name → model instance)
   - CPU/GPU auto-detection
@@ -227,15 +243,12 @@ OVERALL MVP: █████░░░░░░░░░░░░░░░  ~12%
   - Handle mixed scripts (Devanagari + Latin)
 
 ### 4.3 Abuse Classifier
-- ⬜ backend/ai/classifier.py
-  - Primary: `ai4bharat/IndicBERT` for Hindi/Hinglish
-  - Secondary: `unitary/toxic-bert` for English
-  - Output: {"is_abusive": bool, "confidence": 0.0-1.0, "categories": [...]}
-  - Categories: abuse, sexual_harassment, rape_threat, stalking, hate_speech, threat, bullying
+- ✅ backend/ai/classifier.py (keyword_v1 — wired to pipeline, 2026-05-17)
+  - ⬜ IndicBERT + toxic-bert (Sprint R5)
 
 ### 4.4 Keyword Engine
-- ⬜ backend/ai/keyword_engine.py
-  - Loads ai_models/configs/abuse_lexicon.json
+- ✅ backend/ai/keyword_engine.py (inline lexicon MVP)
+  - ⬜ Loads ai_models/configs/abuse_lexicon.json
   - Fast regex-based matching (pre-model filter)
   - Hindi/Hinglish/English keyword lists
   - Returns immediate HIGH flag for explicit content
@@ -276,7 +289,7 @@ OVERALL MVP: █████░░░░░░░░░░░░░░░  ~12%
 
 ---
 
-## PHASE 5: Evidence Engine ⬜ PENDING
+## PHASE 5: Evidence Engine 🔄 IN PROGRESS
 
 ### 5.1 Screenshot Engine
 - ⬜ backend/evidence/screenshot_engine.py
@@ -288,10 +301,8 @@ OVERALL MVP: █████░░░░░░░░░░░░░░░  ~12%
   - Save: storage/evidence/{platform}/{YYYY}/{MM}/{DD}/{evidence_id}.png
 
 ### 5.2 Evidence Collector
-- ⬜ backend/evidence/collector.py
-  - Triggered after AI analysis flags content
-  - Orchestrates: screenshot → metadata → DB insert → WebSocket broadcast
-  - Evidence package: comment + screenshot + AI result + accused profile + timestamp
+- ✅ backend/evidence/collector.py (DB insert from pipeline, 2026-05-17)
+  - ⬜ Screenshot capture + WebSocket broadcast
 
 ### 5.3 Metadata Builder
 - ⬜ backend/evidence/metadata_builder.py

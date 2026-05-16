@@ -72,11 +72,20 @@ class Settings(BaseSettings):
     MODEL_CACHE_DIR: Path = _PROJECT_ROOT / "ai_models" / "cache"
     USE_GPU: bool = False
     PRELOAD_AI_MODELS: bool = False  # Lazy load for faster startup
+    USE_ML_CLASSIFIER: bool = False  # Set true to enable local HF model (downloads on first run)
+    USE_MULTILINGUAL_TOXIC: bool = True  # When ML on: textdetox/bert-multilingual-toxicity-classifier (hi+en)
+    USE_INDICBERT: bool = False  # Hindi/Hinglish DeBERTa abuse model (large download)
+    INDIC_ABUSE_MODEL: str = "Hate-speech-CNERG/dehatebert-mono-indic"
+    CAPTURE_EVIDENCE_SCREENSHOTS: bool = True  # Master toggle for evidence PNGs
+    EVIDENCE_SCREENSHOT_MODE: str = "both"  # pillow | playwright | both
 
     # HuggingFace model identifiers
     INDICBERT_MODEL: str = "ai4bharat/IndicBERT"
     MINILM_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     TOXIC_BERT_MODEL: str = "unitary/toxic-bert"
+    MULTILINGUAL_TOXIC_MODEL: str = "textdetox/bert-multilingual-toxicity-classifier"
+    HUGGINGFACE_API_TOKEN: Optional[str] = None
+    USE_HF_INFERENCE_API: bool = False
 
     # AI thresholds
     ABUSE_CONFIDENCE_THRESHOLD: float = 0.65
@@ -91,8 +100,10 @@ class Settings(BaseSettings):
     # ── Crawler ───────────────────────────────────────────────
     CRAWLER_HEADLESS: bool = True
     CRAWLER_TIMEOUT_MS: int = 30000
+    CRAWLER_DEMO_MODE: bool = True  # Synthetic comments when no platform credentials
+    CRAWLER_SCHEDULER_ENABLED: bool = True  # APScheduler crawl-all on startup
     MAX_CONCURRENT_BROWSERS: int = 3
-    CRAWL_INTERVAL_SECONDS: int = 300  # 5 minutes between crawl cycles
+    CRAWL_INTERVAL_SECONDS: int = 300  # 5 minutes between crawl cycles; 0 = disabled
 
     # Platform credentials (optional — public crawling if empty)
     INSTAGRAM_USERNAME: Optional[str] = None

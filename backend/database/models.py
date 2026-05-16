@@ -62,6 +62,13 @@ class LanguageType(str, enum.Enum):
     UNKNOWN = "unknown"
 
 
+_LANGUAGE_PG = Enum(
+    LanguageType,
+    name="language_type",
+    values_callable=lambda members: [m.value for m in members],
+)
+
+
 class UserRole(str, enum.Enum):
     ADMIN = "ADMIN"
     ANALYST = "ANALYST"
@@ -169,7 +176,7 @@ class CrawledComment(Base):
     comment_url: Mapped[Optional[str]] = mapped_column(Text)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     language: Mapped[LanguageType] = mapped_column(
-        Enum(LanguageType, name="language_type"), default=LanguageType.UNKNOWN
+        _LANGUAGE_PG, default=LanguageType.UNKNOWN
     )
     target_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("target_accounts.id")
@@ -209,7 +216,7 @@ class AIResult(Base):
         Enum(SeverityLevel, name="severity_level"), default=SeverityLevel.LOW
     )
     detected_language: Mapped[LanguageType] = mapped_column(
-        Enum(LanguageType, name="language_type"), default=LanguageType.UNKNOWN
+        _LANGUAGE_PG, default=LanguageType.UNKNOWN
     )
     matched_keywords: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), default=list)
     detected_entities: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
@@ -342,6 +349,20 @@ class DashboardEvent(Base):
     event_count: Mapped[int] = mapped_column(Integer, default=1)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SystemSetting(Base):
+    """Key-value system configuration (admin UI); secrets stored encrypted."""
+
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_secret: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class GeneratedReport(Base):

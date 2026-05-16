@@ -3,12 +3,12 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
-import { PLATFORM_CONFIG } from '@/lib/constants'
-import { createTarget, listTargets } from '@/lib/api'
+import { ACTIVE_PATROL_PLATFORMS, PLATFORM_CONFIG } from '@/lib/constants'
+import { createTarget, listTargets, runCrawlTarget } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import type { Platform, TargetAccount } from '@/types'
 
-const PLATFORMS = Object.keys(PLATFORM_CONFIG) as Platform[]
+const PLATFORMS = ACTIVE_PATROL_PLATFORMS
 
 export default function TargetsPage() {
   const router = useRouter()
@@ -18,6 +18,8 @@ export default function TargetsPage() {
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [crawlingId, setCrawlingId] = useState<string | null>(null)
+  const [crawlMessage, setCrawlMessage] = useState<string | null>(null)
 
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -48,6 +50,26 @@ export default function TargetsPage() {
 
     load()
   }, [router])
+
+  async function handleCrawl(targetId: string, username: string) {
+    setCrawlingId(targetId)
+    setCrawlMessage(null)
+    setError(null)
+    try {
+      const result = await runCrawlTarget(targetId)
+      if (result.success) {
+        setCrawlMessage(
+          `@${username}: +${result.comments_new} new, ${result.abusive_detected} abusive`,
+        )
+      } else {
+        setError(result.error ?? `Crawl failed for @${username}`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Crawl failed')
+    } finally {
+      setCrawlingId(null)
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -90,6 +112,11 @@ export default function TargetsPage() {
       {error && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
           {error}
+        </p>
+      )}
+      {crawlMessage && (
+        <p className="mb-4 rounded-lg border border-patrol-accent/30 bg-patrol-accent/10 px-4 py-3 text-sm text-patrol-accent">
+          {crawlMessage}
         </p>
       )}
 
@@ -189,14 +216,26 @@ export default function TargetsPage() {
                   {item.is_active && item.monitoring_enabled ? 'Monitoring' : 'Paused'}
                 </span>
               </div>
-              <a
-                href={item.profile_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 block truncate text-xs text-patrol-muted hover:text-patrol-accent"
-              >
-                {item.profile_url}
-              </a>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <a
+                  href={item.profile_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="truncate text-xs text-patrol-muted hover:text-patrol-accent"
+                >
+                  {item.profile_url}
+                </a>
+                {item.is_active && item.monitoring_enabled && (
+                  <button
+                    type="button"
+                    disabled={crawlingId === item.id}
+                    onClick={() => handleCrawl(item.id, item.username)}
+                    className="rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1 text-xs font-medium text-patrol-accent disabled:opacity-50"
+                  >
+                    {crawlingId === item.id ? 'Crawling…' : 'Run crawl'}
+                  </button>
+                )}
+              </div>
             </article>
           )
         })}

@@ -11,7 +11,10 @@ interface AppShellProps {
 
 export function AppShell({ title, subtitle, children }: AppShellProps) {
   return (
-    <div className="flex min-h-screen">
+    <div
+      className="flex min-h-screen bg-patrol-bg text-patrol-text"
+      style={{ backgroundColor: '#0a0e1a', color: '#e2e8f0', minHeight: '100vh' }}
+    >
       <Sidebar />
       <div className="flex flex-1 flex-col">
         <Header title={title} subtitle={subtitle} />
