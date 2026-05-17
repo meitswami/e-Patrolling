@@ -43,6 +43,8 @@ def capture_evidence_screenshot(
     target_username: str,
     severity: str,
     post_url: Optional[str] = None,
+    comment_url: Optional[str] = None,
+    comment_posted_at: Optional[str] = None,
 ) -> Optional[str]:
     """
     Create a PNG evidence card. Returns path relative to storage root for DB.
@@ -82,11 +84,19 @@ def capture_evidence_screenshot(
         draw.text((16, y), line, fill=(240, 240, 245), font=font_sm)
         y += 22
 
-    if post_url:
-        draw.text((16, height - 36), post_url[:90], fill=(120, 140, 160), font=font_sm)
+    link = comment_url or post_url
+    if link:
+        draw.text((16, height - 54), f"Link: {link[:85]}", fill=(120, 140, 160), font=font_sm)
+    if comment_posted_at:
+        draw.text(
+            (16, height - 36),
+            f"Comment posted: {comment_posted_at[:22]}",
+            fill=(120, 140, 160),
+            font=font_sm,
+        )
     draw.text(
         (16, height - 18),
-        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        f"Archived: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
         fill=(100, 110, 120),
         font=font_sm,
     )
@@ -139,6 +149,8 @@ async def capture_evidence_artifacts(
     severity: str,
     post_url: Optional[str] = None,
     page_url: Optional[str] = None,
+    comment_url: Optional[str] = None,
+    comment_posted_at: Optional[str] = None,
     demo_mode: bool = False,
 ) -> Optional[str]:
     """
@@ -161,6 +173,8 @@ async def capture_evidence_artifacts(
             target_username=target_username,
             severity=severity,
             post_url=post_url,
+            comment_url=comment_url,
+            comment_posted_at=comment_posted_at,
         )
 
     if mode in ("playwright", "both") and crawler and not demo_mode:

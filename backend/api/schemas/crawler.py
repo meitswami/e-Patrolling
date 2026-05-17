@@ -1,7 +1,7 @@
 """Crawler API schemas."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -49,6 +49,10 @@ class CrawlerStatusResponse(BaseModel):
     scheduler_last_run_status: Optional[str] = None
     scheduler_last_run_message: Optional[str] = None
     evidence_screenshot_mode: str = "both"
+    crawl_stop_requested: bool = False
+    recent_errors: List[Dict[str, Any]] = []
+    last_export_at: Optional[str] = None
+    last_export_path: Optional[str] = None
 
 
 class MonitoringLogItem(BaseModel):

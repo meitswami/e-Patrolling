@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { PlatformLabel } from '@/components/platforms/PlatformLabel'
 import { PlatformMonitorGrid } from '@/components/platforms/PlatformMonitorGrid'
 import { ClientOnly } from '@/components/ClientOnly'
 import { AppShell } from '@/components/layout/AppShell'
@@ -9,6 +10,7 @@ import {
   getCrawlerStatus,
   listCrawlLogs,
   runCrawlAll,
+  stopCrawlAll,
   type CrawlLogItem,
   type CrawlerStatus,
 } from '@/lib/api'
@@ -22,6 +24,7 @@ export default function MonitoringPage() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastRun, setLastRun] = useState<string | null>(null)
+  const [stopping, setStopping] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -42,6 +45,20 @@ export default function MonitoringPage() {
     }
     load()
   }, [router, load])
+
+  async function handleStop() {
+    setStopping(true)
+    setError(null)
+    try {
+      const res = await stopCrawlAll()
+      setLastRun(res.message)
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Stop request failed')
+    } finally {
+      setStopping(false)
+    }
+  }
 
   async function handleRunAll() {
     setRunning(true)
@@ -117,8 +134,35 @@ export default function MonitoringPage() {
         >
           {running ? 'Crawling…' : 'Run crawl now'}
         </button>
+        {(running || status?.scheduler_is_running) && (
+          <button
+            type="button"
+            disabled={stopping}
+            onClick={handleStop}
+            className="rounded-lg border border-red-500/40 px-4 py-2 text-sm text-red-400 disabled:opacity-50"
+          >
+            {stopping ? 'Stopping…' : 'Stop crawl'}
+          </button>
+        )}
         {lastRun && <span className="text-sm text-patrol-muted">{lastRun}</span>}
       </div>
+
+      {status?.recent_errors && status.recent_errors.length > 0 && (
+        <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+          <h2 className="font-mono text-sm text-red-400">Recent crawler errors</h2>
+          <ul className="mt-2 space-y-2 text-xs text-patrol-muted">
+            {status.recent_errors.map((err, i) => (
+              <li key={i}>
+                <span className="text-patrol-text">{err.platform}</span>
+                {err.started_at && (
+                  <span className="ml-2">{new Date(err.started_at).toLocaleString()}</span>
+                )}
+                <p className="text-red-400">{err.error_message}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {loading && <p className="text-sm text-patrol-muted">Loading logs…</p>}
 
@@ -133,7 +177,7 @@ export default function MonitoringPage() {
             className="rounded-lg border border-patrol-border bg-patrol-card px-4 py-3 text-sm"
           >
             <div className="flex flex-wrap gap-2">
-              <span className="font-mono text-patrol-accent">{log.platform}</span>
+              <PlatformLabel platform={log.platform} size="sm" className="font-mono text-patrol-accent" />
               <span className={log.success ? 'text-green-400' : 'text-red-400'}>
                 {log.success ? 'OK' : 'Failed'}
               </span>

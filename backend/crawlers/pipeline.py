@@ -108,12 +108,21 @@ async def run_crawl_for_target(
                 continue
             known_hashes.add(content_hash)
 
+            from osint.avatar_hash import compute_avatar_hash
+
+            accused_bio = raw.raw_data.get("accused_bio") or raw.raw_data.get("bio")
+            avatar_url = raw.accused_avatar_url or raw.raw_data.get("accused_avatar_url")
+            avatar_hash = await compute_avatar_hash(avatar_url) if avatar_url else None
+
             accused = await get_or_create_accused(
                 session,
                 platform=platform,
                 username=raw.accused_username or "unknown",
                 profile_url=raw.accused_profile_url or f"https://instagram.com/{raw.accused_username}",
                 display_name=raw.accused_display_name,
+                avatar_url=avatar_url or None,
+                bio=accused_bio,
+                avatar_hash=avatar_hash,
             )
 
             detected = detect_language(raw.text)
@@ -172,6 +181,18 @@ async def run_crawl_for_target(
             session.add(ai_row)
             await session.flush()
 
+            from osint.permaliinks import build_comment_permalink, build_permalink_snapshot
+
+            comment_url = raw.comment_url or build_comment_permalink(
+                platform.value,
+                username=raw.accused_username or accused.username,
+                post_id=raw.post_id or "",
+                comment_id=raw.comment_id or "",
+                post_url=raw.post_url,
+            )
+            if comment_url and not db_comment.comment_url:
+                db_comment.comment_url = comment_url
+
             eid = generate_evidence_id()
             from evidence.screenshot_engine import capture_evidence_artifacts
 
@@ -184,8 +205,31 @@ async def run_crawl_for_target(
                 target_username=target.username,
                 severity=classification.severity_level.value,
                 post_url=raw.post_url,
-                page_url=raw.comment_url or raw.post_url,
+                page_url=comment_url or raw.post_url,
+                comment_url=comment_url,
+                comment_posted_at=raw.timestamp.isoformat() if raw.timestamp else None,
                 demo_mode=demo_mode,
+            )
+
+            screenshot_hash = None
+            if screenshot_path:
+                from evidence.metadata import resolve_screenshot_path, sha256_file
+
+                abs_path = resolve_screenshot_path(
+                    screenshot_path, settings.EVIDENCE_STORAGE_PATH
+                )
+                screenshot_hash = sha256_file(abs_path)
+
+            permalink_snapshot = build_permalink_snapshot(
+                platform=platform.value,
+                username=raw.accused_username or accused.username,
+                post_url=raw.post_url,
+                comment_url=comment_url,
+                post_id=raw.post_id,
+                comment_id=raw.comment_id,
+                comment_posted_at=raw.timestamp.isoformat() if raw.timestamp else None,
+                captured_at=datetime.now(timezone.utc).isoformat(),
+                raw_data=raw.raw_data,
             )
 
             evidence = await create_evidence_from_classification(
@@ -200,7 +244,12 @@ async def run_crawl_for_target(
                 comment_timestamp=raw.timestamp,
                 classification=classification,
                 screenshot_path=screenshot_path,
+                screenshot_hash=screenshot_hash,
                 evidence_id=eid,
+                comment_url=comment_url,
+                platform_comment_id=raw.comment_id or None,
+                post_id=raw.post_id or None,
+                permalink_snapshot=permalink_snapshot,
             )
 
             from websocket.events import broadcast_evidence_created
@@ -275,7 +324,13 @@ async def run_crawl_all_active(session: AsyncSession) -> list[dict]:
     )
     targets = result.scalars().all()
     summaries = []
+    from task_queue.scheduler import clear_crawl_stop, is_crawl_stop_requested
+
     for target in targets:
+        if is_crawl_stop_requested():
+            logger.warning("Crawl-all stopped by operator request")
+            clear_crawl_stop()
+            break
         if not is_patrol_platform(target.platform):
             logger.info(
                 "Skipping @%s (%s) — patrol not enabled for this platform yet",

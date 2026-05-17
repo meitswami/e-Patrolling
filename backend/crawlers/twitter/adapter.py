@@ -95,6 +95,55 @@ class TwitterCrawler(BaseCrawler):
                 )
         return comments[:max_comments]
 
+    async def _fetch_replies_via_api(
+        self,
+        target_username: str,
+        max_comments: int,
+    ) -> List[CrawledComment]:
+        """Fetch replies directed at the target (conversation monitoring)."""
+        token = settings.TWITTER_BEARER_TOKEN
+        if not token or max_comments <= 0:
+            return []
+
+        headers = {"Authorization": f"Bearer {token}"}
+        params = {
+            "query": f"to:{target_username} -is:retweet",
+            "max_results": min(max_comments, 50),
+            "tweet.fields": "created_at,author_id,text,in_reply_to_user_id",
+        }
+        comments: List[CrawledComment] = []
+        import aiohttp
+
+        async with aiohttp.ClientSession() as client:
+            async with client.get(
+                "https://api.twitter.com/2/tweets/search/recent",
+                headers=headers,
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+            for item in data.get("data", []):
+                text = item.get("text", "")
+                if not text:
+                    continue
+                author = item.get("author_id", "unknown")
+                comments.append(
+                    CrawledComment(
+                        platform=self.platform.value,
+                        text=text,
+                        accused_username=f"user_{author}",
+                        accused_profile_url=f"https://twitter.com/i/user/{author}",
+                        target_username=target_username,
+                        post_url=f"https://twitter.com/{target_username}",
+                        comment_id=str(item.get("id", uuid4().hex[:12])),
+                        timestamp=datetime.now(timezone.utc),
+                        raw_data={"source": "twitter_api_v2", "conversation_type": "reply"},
+                    )
+                )
+        return comments
+
     async def crawl_comments(
         self,
         target_username: str,
@@ -105,7 +154,12 @@ class TwitterCrawler(BaseCrawler):
             return self._demo_comments(target_username, post_url, max_comments)
         api_comments = await self._fetch_via_api(target_username, max_comments)
         if api_comments:
-            return api_comments
+            reply_comments = await self._fetch_replies_via_api(target_username, max(5, max_comments // 3))
+            seen = {c.comment_id for c in api_comments}
+            for rc in reply_comments:
+                if rc.comment_id not in seen:
+                    api_comments.append(rc)
+            return api_comments[:max_comments]
         return self._demo_comments(target_username, post_url, min(max_comments, 3))
 
     def _demo_comments(
@@ -118,17 +172,29 @@ class TwitterCrawler(BaseCrawler):
         out: List[CrawledComment] = []
         for i in range(count):
             accused = f"x_troll_{random.randint(20, 99)}"
+            is_reply = i == 0
+            from osint.demo_enrichment import demo_profile_enrichment
+            from osint.permaliinks import build_comment_permalink
+
+            cid = f"x_demo_{uuid4().hex[:8]}"
+            enrich = demo_profile_enrichment(accused, "twitter")
+            enrich["conversation_type"] = "reply" if is_reply else "mention"
+            purl = post_url or f"https://twitter.com/{target_username}"
             out.append(
                 CrawledComment(
                     platform=self.platform.value,
                     text=random.choice(self.DEMO_PHRASES),
                     accused_username=accused,
                     accused_profile_url=f"https://twitter.com/{accused}",
+                    accused_avatar_url=enrich["accused_avatar_url"],
                     target_username=target_username,
-                    post_url=post_url or f"https://twitter.com/{target_username}",
-                    comment_id=f"x_demo_{uuid4().hex[:8]}",
+                    post_url=purl,
+                    comment_id=cid,
+                    comment_url=build_comment_permalink(
+                        "twitter", username=accused, comment_id=cid, post_url=purl
+                    ),
                     timestamp=datetime.now(timezone.utc),
-                    raw_data={"source": "demo_mode"},
+                    raw_data=enrich,
                 )
             )
         return out

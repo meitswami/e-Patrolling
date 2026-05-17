@@ -29,6 +29,9 @@ SETTING_KEYS = frozenset(
         "facebook_email",
         "facebook_password",
         "evidence_screenshot_mode",
+        "use_ml_classifier",
+        "use_hf_inference_api",
+        "abuse_confidence_threshold",
     }
 )
 
@@ -139,6 +142,30 @@ def facebook_credentials_configured() -> bool:
     return bool(get_facebook_email() and get_facebook_password())
 
 
+def get_use_ml_classifier() -> bool:
+    raw = _raw("use_ml_classifier")
+    if raw is None:
+        return settings.USE_ML_CLASSIFIER
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def get_use_hf_inference_api() -> bool:
+    raw = _raw("use_hf_inference_api")
+    if raw is None:
+        return settings.USE_HF_INFERENCE_API
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def get_abuse_confidence_threshold() -> float:
+    raw = _raw("abuse_confidence_threshold")
+    if raw is None:
+        return settings.ABUSE_CONFIDENCE_THRESHOLD
+    try:
+        return float(raw.strip())
+    except ValueError:
+        return settings.ABUSE_CONFIDENCE_THRESHOLD
+
+
 def has_facebook_password_in_db() -> bool:
     return bool(_raw("facebook_password"))
 
@@ -223,3 +250,57 @@ async def upsert_crawler_settings(
     global _loaded
     _loaded = True
     return await get_crawler_settings_public()
+
+
+async def get_ai_settings_public() -> dict[str, Any]:
+    return {
+        "use_ml_classifier": get_use_ml_classifier(),
+        "use_hf_inference_api": get_use_hf_inference_api(),
+        "abuse_confidence_threshold": get_abuse_confidence_threshold(),
+        "hf_api_configured": bool(settings.HUGGINGFACE_API_TOKEN),
+        "source": "database" if _loaded and _cache else "environment",
+    }
+
+
+async def upsert_ai_settings(
+    session: AsyncSession,
+    *,
+    use_ml_classifier: Optional[bool] = None,
+    use_hf_inference_api: Optional[bool] = None,
+    abuse_confidence_threshold: Optional[float] = None,
+    updated_by: Optional[Any] = None,
+) -> dict[str, Any]:
+    updates: dict[str, str] = {}
+    if use_ml_classifier is not None:
+        updates["use_ml_classifier"] = "true" if use_ml_classifier else "false"
+    if use_hf_inference_api is not None:
+        updates["use_hf_inference_api"] = "true" if use_hf_inference_api else "false"
+    if abuse_confidence_threshold is not None:
+        val = float(abuse_confidence_threshold)
+        if not 0.1 <= val <= 1.0:
+            raise ValueError("abuse_confidence_threshold must be between 0.1 and 1.0")
+        updates["abuse_confidence_threshold"] = str(val)
+
+    for key, value in updates.items():
+        result = await session.execute(select(SystemSetting).where(SystemSetting.key == key))
+        row = result.scalar_one_or_none()
+        if row:
+            row.value = value
+            row.is_secret = False
+            if updated_by:
+                row.updated_by = updated_by
+        else:
+            session.add(
+                SystemSetting(
+                    key=key,
+                    value=value,
+                    is_secret=False,
+                    updated_by=updated_by,
+                )
+            )
+        _cache[key] = value
+
+    await session.flush()
+    global _loaded
+    _loaded = True
+    return await get_ai_settings_public()

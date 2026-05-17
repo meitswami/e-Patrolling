@@ -47,6 +47,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     from services import system_settings as sys_settings
 
     if async_session_factory and db_engine:
+        from database.migrate import run_pending_migrations
+
+        await run_pending_migrations(db_engine)
         async with db_engine.begin() as conn:
             await conn.run_sync(
                 lambda sync_conn: SystemSetting.__table__.create(sync_conn, checkfirst=True)

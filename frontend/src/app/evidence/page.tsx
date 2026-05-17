@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
+import { PlatformLabel } from '@/components/platforms/PlatformLabel'
 import { API_BASE_URL, SEVERITY_CONFIG } from '@/lib/constants'
 import { listEvidence } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
@@ -148,12 +149,22 @@ export default function EvidencePage() {
                         Escalated
                       </span>
                     )}
-                    <span className="text-patrol-muted">{item.platform}</span>
+                    <PlatformLabel platform={item.platform} size="sm" className="text-patrol-muted" />
                     <span className="text-patrol-muted">Risk {item.risk_score}</span>
                   </div>
                   <p className="mt-2 line-clamp-3 text-sm text-patrol-text">{item.comment_text}</p>
                   <p className="mt-2 text-xs text-patrol-muted">
-                    Target: {item.target_username ?? '—'} · Accused: {item.accused_username ?? '—'}
+                    Target: {item.target_username ?? '—'} · Accused:{' '}
+                    {item.accused_username ? (
+                      <Link
+                        href={`/offenders/dossier/${encodeURIComponent(item.accused_username)}`}
+                        className="text-patrol-accent hover:underline"
+                      >
+                        @{item.accused_username}
+                      </Link>
+                    ) : (
+                      '—'
+                    )}
                   </p>
                 </div>
               </div>

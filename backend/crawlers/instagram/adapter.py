@@ -148,6 +148,13 @@ class InstagramCrawler(BaseCrawler):
         for i in range(count):
             text = random.choice(self.DEMO_PHRASES)
             accused = f"demo_troll_{random.randint(10, 99)}"
+            post_id = f"demo_post_{uuid4().hex[:8]}"
+            comment_id = f"demo_cmt_{uuid4().hex[:8]}"
+            from osint.demo_enrichment import demo_profile_enrichment
+            from osint.permaliinks import build_comment_permalink
+
+            enrich = demo_profile_enrichment(accused, "instagram")
+            purl = post_url or f"https://www.instagram.com/{target_username}/"
             comments.append(
                 CrawledComment(
                     platform=self.platform.value,
@@ -155,12 +162,20 @@ class InstagramCrawler(BaseCrawler):
                     accused_username=accused,
                     accused_display_name=f"Demo User {i + 1}",
                     accused_profile_url=f"https://www.instagram.com/{accused}/",
+                    accused_avatar_url=enrich["accused_avatar_url"],
                     target_username=target_username,
-                    post_url=post_url or f"https://www.instagram.com/{target_username}/",
-                    post_id=f"demo_post_{uuid4().hex[:8]}",
-                    comment_id=f"demo_cmt_{uuid4().hex[:8]}",
+                    post_url=purl,
+                    post_id=post_id,
+                    comment_id=comment_id,
+                    comment_url=build_comment_permalink(
+                        "instagram",
+                        username=accused,
+                        post_id=post_id,
+                        comment_id=comment_id,
+                        post_url=purl,
+                    ),
                     timestamp=datetime.now(timezone.utc),
-                    raw_data={"source": "demo_mode"},
+                    raw_data=enrich,
                 )
             )
         self.logger.info("Demo mode: generated %d synthetic comments for @%s", count, target_username)

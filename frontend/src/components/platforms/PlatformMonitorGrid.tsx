@@ -1,7 +1,7 @@
 'use client'
 
 import type { PlatformPatrolInfo } from '@/lib/api'
-import { PLATFORM_CONFIG } from '@/lib/constants'
+import { PlatformIcon } from '@/components/platforms/PlatformIcon'
 
 interface PlatformMonitorGridProps {
   platforms: PlatformPatrolInfo[]
@@ -37,8 +37,9 @@ export function PlatformMonitorGrid({
             {roadmap.map((p) => (
               <span
                 key={p.id}
-                className="rounded-lg border border-dashed border-patrol-border bg-patrol-surface/50 px-3 py-1.5 text-xs text-patrol-muted"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-patrol-border bg-patrol-surface/50 px-3 py-1.5 text-xs text-patrol-muted"
               >
+                <PlatformIcon platform={p.id} size="sm" />
                 {p.label} · coming soon
               </span>
             ))}
@@ -56,17 +57,13 @@ function PlatformCard({
   platform: PlatformPatrolInfo
   demoMode?: boolean
 }) {
-  const cfg = PLATFORM_CONFIG[platform.id as keyof typeof PLATFORM_CONFIG]
-  const icon = cfg?.icon ?? '◎'
   const monitoring = platform.monitoring_count > 0
 
   return (
     <article className="rounded-xl border border-patrol-border bg-patrol-card p-4 transition hover:border-patrol-accent/30">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-lg" aria-hidden>
-            {icon}
-          </span>
+          <PlatformIcon platform={platform.id} size="lg" />
           <div>
             <p className="font-medium text-patrol-text">{platform.label}</p>
             <p className="text-xs text-patrol-muted">Patrol enabled</p>

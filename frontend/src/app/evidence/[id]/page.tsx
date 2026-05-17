@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
+import { PlatformLabel } from '@/components/platforms/PlatformLabel'
 import { API_BASE_URL, SEVERITY_CONFIG } from '@/lib/constants'
 import {
   deleteEvidence,
@@ -109,7 +110,7 @@ export default function EvidenceDetailPage() {
                 Escalated
               </span>
             )}
-            <span className="text-patrol-muted">{item.platform}</span>
+            <PlatformLabel platform={item.platform} size="sm" className="text-patrol-muted" />
             <span className="text-patrol-muted">Risk {item.risk_score}</span>
           </div>
 

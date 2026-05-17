@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
+import { PlatformIcon } from '@/components/platforms/PlatformIcon'
 import { ACTIVE_PATROL_PLATFORMS, PLATFORM_CONFIG } from '@/lib/constants'
 import { createTarget, listTargets, runCrawlTarget } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
@@ -145,7 +146,10 @@ export default function TargetsPage() {
               />
             </label>
             <label className="block text-sm">
-              <span className="text-patrol-muted">Platform</span>
+              <span className="inline-flex items-center gap-1.5 text-patrol-muted">
+                <PlatformIcon platform={platform} size="sm" />
+                Platform
+              </span>
               <select
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value as Platform)}
@@ -194,14 +198,13 @@ export default function TargetsPage() {
 
       <div className="space-y-3">
         {items.map((item) => {
-          const plat = PLATFORM_CONFIG[item.platform]
           return (
             <article
               key={item.id}
               className="rounded-xl border border-patrol-border bg-patrol-card p-4 transition hover:border-patrol-accent/20"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-lg">{plat.icon}</span>
+                <PlatformIcon platform={item.platform} size="lg" />
                 <span className="font-mono text-patrol-accent">@{item.username}</span>
                 {item.display_name && (
                   <span className="text-sm text-patrol-text">{item.display_name}</span>

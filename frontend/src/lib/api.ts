@@ -212,6 +212,10 @@ export interface CrawlerStatus {
   scheduler_last_run_status?: string | null
   scheduler_last_run_message?: string | null
   evidence_screenshot_mode?: string
+  crawl_stop_requested?: boolean
+  recent_errors?: { platform: string; error_message: string | null; started_at: string | null }[]
+  last_export_at?: string | null
+  last_export_path?: string | null
 }
 
 export interface CrawlLogItem {
@@ -252,6 +256,10 @@ export async function runCrawlAll(): Promise<CrawlResultSummary[]> {
   return request<CrawlResultSummary[]>('/crawlers/run-all', { method: 'POST' }, true)
 }
 
+export async function stopCrawlAll(): Promise<{ status: string; message: string }> {
+  return request<{ status: string; message: string }>('/crawlers/stop', { method: 'POST' }, true)
+}
+
 export async function runCrawlTarget(targetId: string): Promise<CrawlResultSummary> {
   return request<CrawlResultSummary>(`/crawlers/run/${targetId}`, { method: 'POST' }, true)
 }
@@ -278,6 +286,8 @@ export interface RegionSummary {
   region: string
   target_count: number
   accused_count: number
+  evidence_count?: number
+  critical_evidence?: number
   avg_confidence: number
 }
 
@@ -298,6 +308,160 @@ export async function listOffenders(
     {},
     true,
   )
+}
+
+export interface AccusedProfileItem {
+  id: string
+  platform: Platform
+  username: string
+  display_name: string | null
+  profile_url: string
+  total_incidents: number
+  critical_count: number
+  high_count: number
+  max_risk_score: number
+  status: string
+  last_seen_at: string | null
+}
+
+export interface AccusedDossier {
+  username: string
+  generated_at: string
+  platform_count: number
+  platforms: string[]
+  profiles: {
+    id: string
+    platform: string
+    username: string
+    profile_url: string
+    total_incidents: number
+    critical_count: number
+    max_risk_score: number
+    status: string
+  }[]
+  summary: {
+    total_evidence: number
+    severity_breakdown: Record<string, number>
+    evidence_by_platform: Record<string, number>
+    targets_affected: string[]
+    targets_affected_count: number
+    max_risk_score: number
+    composite_risk_score: number
+    escalated_count: number
+    total_incidents_reported: number
+  }
+  osint?: OsintReport | null
+  affected_posts?: {
+    post_url: string | null
+    post_id: string | null
+    platform: string
+    evidence_on_post: number
+  }[]
+  evidence: {
+    evidence_id: string
+    platform: string
+    severity: string
+    risk_score: number
+    target_username: string | null
+    comment_text: string
+    comment_posted_at: string | null
+    evidence_captured_at: string | null
+    post_url: string | null
+    comment_url: string | null
+    direct_comment_link: string | null
+    post_id: string | null
+    comment_id: string | null
+    screenshot_path: string | null
+    screenshot_hash: string | null
+    is_escalated: boolean
+    deletion_resilient?: boolean
+  }[]
+}
+
+export async function searchAccusedProfiles(username: string): Promise<AccusedProfileItem[]> {
+  const q = encodeURIComponent(username.replace(/^@/, ''))
+  return request<AccusedProfileItem[]>(`/offenders/search?username=${q}`, {}, true)
+}
+
+export async function getAccusedDossier(
+  username: string,
+  runOsint = false,
+): Promise<AccusedDossier> {
+  const q = encodeURIComponent(username.replace(/^@/, ''))
+  return request<AccusedDossier>(
+    `/offenders/dossier/${q}${runOsint ? '?run_osint=true' : ''}`,
+    {},
+    true,
+  )
+}
+
+export interface OsintReport {
+  username: string
+  generated_at: string
+  seed_profiles: AccusedDossier['profiles']
+  linked_profiles: {
+    profile_id: string
+    platform: string
+    username: string
+    profile_url: string
+    confidence: number
+    match_signals: string[]
+    in_database: boolean
+    bio?: string | null
+    avatar_url?: string | null
+  }[]
+  platform_candidates: {
+    platform: string
+    username: string
+    profile_url: string
+    confidence: number
+    match_signals: string[]
+    in_database: boolean
+    note?: string
+  }[]
+  network_hints: {
+    disclaimer: string
+    ip_addresses: string[]
+    geo_hints: string[]
+    timezone_hints: string[]
+  }
+  match_summary: {
+    database_links: number
+    platforms_confirmed: string[]
+    candidates_to_verify: number
+  }
+}
+
+export async function refreshAccusedOsint(username: string): Promise<OsintReport> {
+  const q = encodeURIComponent(username.replace(/^@/, ''))
+  return request<OsintReport>(`/offenders/dossier/${q}/osint`, { method: 'POST' }, true)
+}
+
+export function accusedDossierPdfUrl(username: string): string {
+  const q = encodeURIComponent(username.replace(/^@/, ''))
+  return `${API_BASE_URL}${API_PREFIX}/reports/accused/${q}/dossier.pdf`
+}
+
+export interface AiSettings {
+  use_ml_classifier: boolean
+  use_hf_inference_api: boolean
+  abuse_confidence_threshold: number
+  hf_api_configured: boolean
+  source: string
+}
+
+export interface AiSettingsUpdate {
+  use_ml_classifier?: boolean
+  use_hf_inference_api?: boolean
+  abuse_confidence_threshold?: number
+}
+
+export async function getAiSettings(): Promise<AiSettings> {
+  return request<AiSettings>('/settings/ai', {}, true)
+}
+
+export async function updateAiSettings(body: AiSettingsUpdate): Promise<AiSettings> {
+  return request<AiSettings>('/settings/ai', { method: 'PUT', body: JSON.stringify(body) }, true)
 }
 
 export interface AiStatus {

@@ -104,6 +104,9 @@ class Settings(BaseSettings):
     CRAWLER_SCHEDULER_ENABLED: bool = True  # APScheduler crawl-all on startup
     MAX_CONCURRENT_BROWSERS: int = 3
     CRAWL_INTERVAL_SECONDS: int = 300  # 5 minutes between crawl cycles; 0 = disabled
+    WEEKLY_REPORT_EXPORT_ENABLED: bool = True
+    WEEKLY_REPORT_DAY: str = "mon"
+    WEEKLY_REPORT_HOUR: int = 6
 
     # Platform credentials (optional — public crawling if empty)
     INSTAGRAM_USERNAME: Optional[str] = None

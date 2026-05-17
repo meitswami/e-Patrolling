@@ -6,20 +6,18 @@ import { Activity, AlertTriangle, Shield, Users } from 'lucide-react'
 import { ClientOnly } from '@/components/ClientOnly'
 import { AppShell } from '@/components/layout/AppShell'
 import { PlatformMonitorGrid } from '@/components/platforms/PlatformMonitorGrid'
-import { getCrawlerStatus, getDashboardStats, getHealth, getMe } from '@/lib/api'
+import { getCrawlerStatus, getDashboardStats, getMe } from '@/lib/api'
 import type { CrawlerStatus } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { connectDashboardWs, type WsMessage } from '@/lib/ws'
-import type { DashboardStats, HealthResponse, User } from '@/types'
+import type { DashboardStats, User } from '@/types'
 
 export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
-  const [health, setHealth] = useState<HealthResponse | null>(null)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [liveFeed, setLiveFeed] = useState<string[]>([])
-  const [wsConnected, setWsConnected] = useState(false)
   const [crawlerStatus, setCrawlerStatus] = useState<CrawlerStatus | null>(null)
 
   const refreshStats = useCallback(async () => {
@@ -39,14 +37,12 @@ export default function DashboardPage() {
 
     async function load() {
       try {
-        const [me, apiHealth, dashboard, crawlers] = await Promise.all([
+        const [me, dashboard, crawlers] = await Promise.all([
           getMe(),
-          getHealth(),
           getDashboardStats(),
           getCrawlerStatus(),
         ])
         setUser(me)
-        setHealth(apiHealth)
         setStats(dashboard)
         setCrawlerStatus(crawlers)
       } catch (err) {
@@ -58,7 +54,6 @@ export default function DashboardPage() {
 
     const disconnect = connectDashboardWs((msg: WsMessage) => {
       if (msg.type === 'connected') {
-        setWsConnected(true)
         return
       }
       if (msg.type === 'evidence_created') {
@@ -107,35 +102,6 @@ export default function DashboardPage() {
           <p className="text-sm text-patrol-muted">Connecting to PATROL API…</p>
         }
       >
-      {health && (
-        <div className="mb-6 flex items-center gap-3 rounded-lg border border-patrol-border bg-patrol-card px-4 py-3">
-          <span
-            className={`h-2.5 w-2.5 rounded-full ${
-              health.status === 'healthy' ? 'bg-patrol-accent animate-pulse-dot' : 'bg-red-500'
-            }`}
-          />
-          <div className="text-sm">
-            <span className="text-patrol-text">API {health.status}</span>
-            <span className="mx-2 text-patrol-muted">·</span>
-            <span className="text-patrol-muted">
-              {health.service} v{health.version} · Redis: {health.redis}
-              {wsConnected && (
-                <>
-                  <span className="mx-2">·</span>
-                  <span className="text-patrol-accent">Live feed connected</span>
-                </>
-              )}
-              {stats?.live_monitoring && (
-                <>
-                  <span className="mx-2">·</span>
-                  <span className="text-patrol-accent">Monitoring active</span>
-                </>
-              )}
-            </span>
-          </div>
-        </div>
-      )}
-
       {crawlerStatus?.platforms && crawlerStatus.platforms.length > 0 && (
         <div className="mb-6">
           <PlatformMonitorGrid

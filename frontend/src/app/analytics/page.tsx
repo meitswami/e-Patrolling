@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
-import { PLATFORM_CONFIG } from '@/lib/constants'
+import { PlatformLabel } from '@/components/platforms/PlatformLabel'
 import { getAnalyticsOverview, type AnalyticsOverview } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import type { Platform } from '@/types'
 
 export default function AnalyticsPage() {
   const router = useRouter()
@@ -54,15 +53,12 @@ export default function AnalyticsPage() {
         <h2 className="font-mono text-sm text-patrol-accent">By platform</h2>
         <ul className="mt-3 space-y-2">
           {platforms.map((p) => {
-            const cfg = PLATFORM_CONFIG[p.platform as Platform]
             return (
               <li
                 key={p.platform}
                 className="flex items-center justify-between text-sm"
               >
-                <span>
-                  {cfg?.icon} {cfg?.label ?? p.platform}
-                </span>
+                <PlatformLabel platform={p.platform} size="sm" />
                 <span className="font-mono text-patrol-accent">{p.count}</span>
               </li>
             )

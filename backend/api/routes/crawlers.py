@@ -22,7 +22,7 @@ from crawlers.registry import platform_catalog, supported_platforms
 from database.connection import get_session
 from database.models import MonitoringLog, TargetAccount, User
 from task_queue.producer import is_redis_available
-from task_queue.scheduler import get_scheduler_state
+from task_queue.scheduler import get_scheduler_state, request_crawl_stop
 from task_queue.tasks import schedule_crawl_all, schedule_crawl_target
 
 router = APIRouter()
@@ -77,6 +77,21 @@ async def crawler_status(
         )
 
     sched = get_scheduler_state()
+    err_result = await session.execute(
+        select(MonitoringLog)
+        .where(MonitoringLog.success.is_(False))
+        .order_by(MonitoringLog.started_at.desc())
+        .limit(5)
+    )
+    recent_errors = [
+        {
+            "platform": log.platform.value,
+            "target_id": str(log.target_id) if log.target_id else None,
+            "error_message": log.error_message,
+            "started_at": log.started_at.isoformat() if log.started_at else None,
+        }
+        for log in err_result.scalars().all()
+    ]
     return CrawlerStatusResponse(
         supported_platforms=supported_platforms(),
         platforms=platforms,
@@ -89,6 +104,10 @@ async def crawler_status(
         scheduler_last_run_status=sched.get("last_run_status"),
         scheduler_last_run_message=sched.get("last_run_message"),
         evidence_screenshot_mode=app_settings.get_evidence_screenshot_mode(),
+        crawl_stop_requested=bool(sched.get("stop_requested")),
+        recent_errors=recent_errors,
+        last_export_at=sched.get("last_export_at"),
+        last_export_path=sched.get("last_export_path"),
     )
 
 
@@ -175,6 +194,23 @@ async def schedule_all_crawls(
 ) -> CrawlTriggerResponse:
     mode = await schedule_crawl_all(run_inline_if_no_redis=True)
     return CrawlTriggerResponse(status=mode, message=f"Crawl-all {mode}")
+
+
+@router.post("/stop")
+async def stop_crawl_all(
+    _user: User = Depends(require_analyst),
+) -> dict:
+    """Request graceful stop of an in-progress crawl-all after the current target."""
+    request_crawl_stop()
+    return {"status": "stop_requested", "message": "Crawl-all will stop after the current target"}
+
+
+@router.get("/job")
+async def crawl_job_status(
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Current crawl job / scheduler snapshot."""
+    return get_scheduler_state()
 
 
 @router.get("/logs", response_model=list[MonitoringLogItem])

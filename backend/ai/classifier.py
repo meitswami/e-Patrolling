@@ -10,6 +10,7 @@ from ai.model_loader import score_indic_abuse, score_toxicity
 from ai.severity_engine import risk_score_from_confidence, severity_from_score
 from configs.settings import settings
 from database.models import LanguageType, SeverityLevel
+from services import system_settings as app_settings
 
 
 @dataclass
@@ -44,13 +45,15 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
     if lang == LanguageType.UNKNOWN:
         lang = detect_language(text).language
 
-    ml_score = score_toxicity(text)
-    api_score = None
-    if settings.USE_HF_INFERENCE_API:
-        api_score = score_via_inference_api(text)
+    threshold = app_settings.get_abuse_confidence_threshold()
+    use_ml = app_settings.get_use_ml_classifier()
+    use_hf = app_settings.get_use_hf_inference_api()
+
+    ml_score = score_toxicity(text) if use_ml else None
+    api_score = score_via_inference_api(text) if use_hf else None
 
     indic_score = None
-    if lang in (LanguageType.HINDI, LanguageType.HINGLISH, LanguageType.UNKNOWN):
+    if use_ml and lang in (LanguageType.HINDI, LanguageType.HINGLISH, LanguageType.UNKNOWN):
         indic_score = score_indic_abuse(text)
 
     combined = kw.confidence_score
@@ -70,9 +73,9 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
 
     severity = severity_from_score(combined)
     risk = risk_score_from_confidence(combined)
-    is_abusive = combined >= settings.ABUSE_CONFIDENCE_THRESHOLD and (
+    is_abusive = combined >= threshold and (
         kw.is_abusive
-        or any(s >= settings.ABUSE_CONFIDENCE_THRESHOLD for s in scores)
+        or any(s >= threshold for s in scores)
     )
 
     flags = kw.flags

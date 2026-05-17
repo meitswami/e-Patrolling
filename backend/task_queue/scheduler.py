@@ -23,12 +23,36 @@ _scheduler_state: dict[str, Any] = {
     "last_run_message": None,
     "is_running": False,
     "skipped_overlapping": 0,
+    "stop_requested": False,
+    "last_export_at": None,
+    "last_export_path": None,
 }
+
+_crawl_stop_requested = False
 
 
 def get_scheduler_state() -> dict[str, Any]:
     """Snapshot for /crawlers/status."""
-    return dict(_scheduler_state)
+    state = dict(_scheduler_state)
+    state["stop_requested"] = _crawl_stop_requested
+    return state
+
+
+def request_crawl_stop() -> None:
+    """Signal in-flight crawl-all to stop after the current target."""
+    global _crawl_stop_requested
+    _crawl_stop_requested = True
+    _scheduler_state["stop_requested"] = True
+
+
+def is_crawl_stop_requested() -> bool:
+    return _crawl_stop_requested
+
+
+def clear_crawl_stop() -> None:
+    global _crawl_stop_requested
+    _crawl_stop_requested = False
+    _scheduler_state["stop_requested"] = False
 
 
 class CrawlInProgressError(Exception):
@@ -88,6 +112,23 @@ async def _scheduled_crawl_job() -> None:
     await run_crawl_all_guarded()
 
 
+async def _weekly_evidence_export_job() -> None:
+    """Write a CSV snapshot to exports/ for scheduled reporting."""
+    from database.connection import async_session_factory
+    from reports.weekly_export import run_weekly_evidence_export
+
+    if not async_session_factory:
+        return
+    try:
+        async with async_session_factory() as session:
+            path = await run_weekly_evidence_export(session)
+            _scheduler_state["last_export_at"] = datetime.now(timezone.utc).isoformat()
+            _scheduler_state["last_export_path"] = str(path) if path else None
+            logger.info("Weekly evidence export: %s", path)
+    except Exception as exc:
+        logger.exception("Weekly export failed: %s", exc)
+
+
 def start_scheduler() -> None:
     """Start periodic crawl-all when enabled and interval > 0."""
     global _scheduler
@@ -110,6 +151,16 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    if settings.WEEKLY_REPORT_EXPORT_ENABLED:
+        _scheduler.add_job(
+            _weekly_evidence_export_job,
+            "cron",
+            day_of_week=settings.WEEKLY_REPORT_DAY,
+            hour=settings.WEEKLY_REPORT_HOUR,
+            id="patrol_weekly_export",
+            replace_existing=True,
+            max_instances=1,
+        )
     _scheduler.start()
     logger.info(
         "Crawl scheduler started — every %ss (max_instances=1, coalesce=True)",

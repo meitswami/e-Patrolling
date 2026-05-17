@@ -19,6 +19,20 @@ class CrawlerSettingsResponse(BaseModel):
     source: str
 
 
+class AiSettingsResponse(BaseModel):
+    use_ml_classifier: bool
+    use_hf_inference_api: bool
+    abuse_confidence_threshold: float
+    hf_api_configured: bool
+    source: str
+
+
+class AiSettingsUpdate(BaseModel):
+    use_ml_classifier: Optional[bool] = None
+    use_hf_inference_api: Optional[bool] = None
+    abuse_confidence_threshold: Optional[float] = Field(None, ge=0.1, le=1.0)
+
+
 class CrawlerSettingsUpdate(BaseModel):
     crawler_demo_mode: Optional[bool] = None
     instagram_username: Optional[str] = Field(None, max_length=255)

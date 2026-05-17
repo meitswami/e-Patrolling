@@ -11,11 +11,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from fastapi import HTTPException, status
+
 from auth.middleware import get_current_user
 from auth.rbac import require_analyst
 from configs.settings import settings
 from database.connection import get_session
 from database.models import AccusedProfile, EvidenceReport, TargetAccount, User
+from services.accused_dossier import build_accused_dossier
 
 router = APIRouter()
 
@@ -191,6 +194,38 @@ async def export_evidence_pdf(
     buffer.seek(0)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
     filename = f"patrol_evidence_{stamp}.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/accused/{username}/dossier.pdf")
+async def export_accused_dossier_pdf(
+    username: str,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+) -> StreamingResponse:
+    """Download cross-platform accused dossier as PDF."""
+    dossier = await build_accused_dossier(session, username)
+    if not dossier:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No accused profiles found for @{username.lstrip('@')}",
+        )
+    try:
+        from reports.accused_dossier_pdf import render_dossier_pdf
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="PDF export requires reportlab",
+        ) from None
+
+    buffer = render_dossier_pdf(dossier)
+    safe = username.lstrip("@").replace("/", "_")[:50]
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    filename = f"patrol_dossier_{safe}_{stamp}.pdf"
     return StreamingResponse(
         buffer,
         media_type="application/pdf",

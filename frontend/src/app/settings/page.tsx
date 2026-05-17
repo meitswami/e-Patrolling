@@ -3,14 +3,22 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
+import { SystemStatusBar } from '@/components/layout/SystemStatusBar'
+import { PlatformIcon } from '@/components/platforms/PlatformIcon'
 import {
+  getAiSettings,
   getAiStatus,
   getCrawlerSettings,
+  getDashboardStats,
+  getHealth,
+  updateAiSettings,
   updateCrawlerSettings,
   type AiStatus,
   type CrawlerSettings,
 } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
+import { connectDashboardWs, type WsMessage } from '@/lib/ws'
+import type { DashboardStats, HealthResponse } from '@/types'
 
 const PASSWORD_PLACEHOLDER = '********'
 
@@ -20,6 +28,9 @@ export default function SettingsPage() {
   const isAdmin = user?.role === 'ADMIN'
 
   const [ai, setAi] = useState<AiStatus | null>(null)
+  const [health, setHealth] = useState<HealthResponse | null>(null)
+  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [wsConnected, setWsConnected] = useState(false)
   const [crawler, setCrawler] = useState<CrawlerSettings | null>(null)
   const [demoMode, setDemoMode] = useState(true)
   const [igUser, setIgUser] = useState('')
@@ -27,6 +38,10 @@ export default function SettingsPage() {
   const [fbEmail, setFbEmail] = useState('')
   const [fbPassword, setFbPassword] = useState('')
   const [screenshotMode, setScreenshotMode] = useState<'pillow' | 'playwright' | 'both'>('both')
+  const [useMl, setUseMl] = useState(false)
+  const [useHfApi, setUseHfApi] = useState(false)
+  const [abuseThreshold, setAbuseThreshold] = useState(0.65)
+  const [savingAi, setSavingAi] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,10 +54,19 @@ export default function SettingsPage() {
     }
     async function load() {
       try {
-        const aiStatus = await getAiStatus()
+        const [aiStatus, apiHealth, dashboard] = await Promise.all([
+          getAiStatus(),
+          getHealth(),
+          getDashboardStats(),
+        ])
         setAi(aiStatus)
+        setHealth(apiHealth)
+        setStats(dashboard)
         if (isAdmin) {
-          const crawlerSettings = await getCrawlerSettings()
+          const [crawlerSettings, aiSettings] = await Promise.all([
+            getCrawlerSettings(),
+            getAiSettings(),
+          ])
           setCrawler(crawlerSettings)
           setDemoMode(crawlerSettings.crawler_demo_mode)
           setIgUser(crawlerSettings.instagram_username)
@@ -56,6 +80,9 @@ export default function SettingsPage() {
           if (crawlerSettings.facebook_password_set) {
             setFbPassword(PASSWORD_PLACEHOLDER)
           }
+          setUseMl(aiSettings.use_ml_classifier)
+          setUseHfApi(aiSettings.use_hf_inference_api)
+          setAbuseThreshold(aiSettings.abuse_confidence_threshold)
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load settings')
@@ -65,6 +92,14 @@ export default function SettingsPage() {
     }
 
     load()
+
+    const disconnect = connectDashboardWs((msg: WsMessage) => {
+      if (msg.type === 'connected') {
+        setWsConnected(true)
+      }
+    })
+
+    return disconnect
   }, [router, isAdmin])
 
   async function handleSave(e: FormEvent) {
@@ -111,6 +146,14 @@ export default function SettingsPage() {
         </p>
       )}
 
+      {health && (
+        <SystemStatusBar
+          health={health}
+          wsConnected={wsConnected}
+          liveMonitoring={stats?.live_monitoring}
+        />
+      )}
+
       {!isAdmin && (
         <p className="rounded-lg border border-patrol-border bg-patrol-card px-4 py-3 text-sm text-patrol-muted">
           Crawler configuration requires an administrator account. Contact your admin to change
@@ -145,7 +188,10 @@ export default function SettingsPage() {
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="block text-sm">
-                <span className="text-patrol-muted">Instagram username</span>
+                <span className="inline-flex items-center gap-1.5 text-patrol-muted">
+                  <PlatformIcon platform="instagram" size="sm" />
+                  Instagram username
+                </span>
                 <input
                   value={igUser}
                   onChange={(e) => setIgUser(e.target.value)}
@@ -172,7 +218,10 @@ export default function SettingsPage() {
               </label>
             </div>
 
-            <h3 className="mt-6 font-mono text-sm text-patrol-accent">Facebook</h3>
+            <h3 className="mt-6 flex items-center gap-2 font-mono text-sm text-patrol-accent">
+              <PlatformIcon platform="facebook" size="sm" />
+              Facebook
+            </h3>
             <p className="mt-1 text-xs text-patrol-muted">
               Playwright login below, or set FACEBOOK_ACCESS_TOKEN in .env for Graph API (Pages).
               {crawler?.facebook_access_token_set && ' Token detected in .env.'}
@@ -197,7 +246,10 @@ export default function SettingsPage() {
               </label>
             </div>
 
-            <h3 className="mt-6 font-mono text-sm text-patrol-accent">Threads</h3>
+            <h3 className="mt-6 flex items-center gap-2 font-mono text-sm text-patrol-accent">
+              <PlatformIcon platform="threads" size="sm" />
+              Threads
+            </h3>
             <p className="mt-1 text-xs text-patrol-muted">
               Uses Instagram login above (Meta SSO on threads.net).
             </p>
@@ -243,17 +295,70 @@ export default function SettingsPage() {
               <li>HF token configured: {ai.hf_api_configured ? 'Yes' : 'No'}</li>
               <li>Abuse threshold: {ai.abuse_threshold}</li>
             </ul>
-          </section>
-          <section className="rounded-xl border border-patrol-border bg-patrol-card p-5">
-            <h2 className="font-mono text-patrol-accent">Hugging Face models</h2>
-            <p className="mt-2 text-sm text-patrol-muted">
-              ML options remain in backend <code className="text-patrol-text">.env</code>:{' '}
-              USE_ML_CLASSIFIER, USE_HF_INFERENCE_API, HUGGINGFACE_API_TOKEN
-            </p>
-            {ai.multilingual_model && (
-              <p className="mt-2 text-xs">Active local model: {ai.multilingual_model}</p>
+            {isAdmin && !loading && (
+              <div className="mt-4 space-y-3 border-t border-patrol-border pt-4">
+                <label className="flex items-center gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={useMl}
+                    onChange={(e) => setUseMl(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <span>Use local ML classifier (downloads models on first run)</span>
+                </label>
+                <label className="flex items-center gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={useHfApi}
+                    onChange={(e) => setUseHfApi(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <span>Use Hugging Face Inference API</span>
+                </label>
+                <label className="block text-sm">
+                  <span className="text-patrol-muted">Abuse confidence threshold</span>
+                  <input
+                    type="number"
+                    min={0.1}
+                    max={1}
+                    step={0.05}
+                    value={abuseThreshold}
+                    onChange={(e) => setAbuseThreshold(parseFloat(e.target.value))}
+                    className="mt-1 w-full max-w-xs rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={savingAi}
+                  onClick={async () => {
+                    setSavingAi(true)
+                    setError(null)
+                    setSuccess(null)
+                    try {
+                      await updateAiSettings({
+                        use_ml_classifier: useMl,
+                        use_hf_inference_api: useHfApi,
+                        abuse_confidence_threshold: abuseThreshold,
+                      })
+                      const aiStatus = await getAiStatus()
+                      setAi(aiStatus)
+                      setSuccess('AI settings saved')
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Failed to save AI settings')
+                    } finally {
+                      setSavingAi(false)
+                    }
+                  }}
+                  className="rounded-lg border border-patrol-accent/50 px-4 py-2 text-sm text-patrol-accent disabled:opacity-50"
+                >
+                  {savingAi ? 'Saving…' : 'Save AI settings'}
+                </button>
+              </div>
             )}
           </section>
+          {ai.multilingual_model && (
+            <p className="text-xs text-patrol-muted">Local model: {ai.multilingual_model}</p>
+          )}
         </div>
       )}
     </AppShell>
