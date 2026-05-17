@@ -88,6 +88,9 @@ async function request<T>(
     throw new Error(parseApiError(body, `Request failed (${res.status})`))
   }
 
+  if (res.status === 204) {
+    return undefined as T
+  }
   return res.json() as Promise<T>
 }
 
@@ -106,15 +109,58 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   return request<DashboardStats>('/analytics/dashboard', {}, true)
 }
 
+export interface EvidenceDetail extends EvidenceListItem {
+  post_url: string | null
+  comment_timestamp: string | null
+  notes: string | null
+  escalated_at: string | null
+  target_id: string | null
+  accused_id: string | null
+}
+
+export async function getEvidence(evidenceId: string): Promise<EvidenceDetail> {
+  return request<EvidenceDetail>(`/evidence/${evidenceId}`, {}, true)
+}
+
 export async function listEvidence(
   page = 1,
   pageSize = 20,
+  filters?: {
+    search?: string
+    severity?: string
+    platform?: string
+    is_escalated?: boolean
+  },
 ): Promise<PaginatedResponse<EvidenceListItem>> {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  if (filters?.search) params.set('search', filters.search)
+  if (filters?.severity) params.set('severity', filters.severity)
+  if (filters?.platform) params.set('platform', filters.platform)
+  if (filters?.is_escalated !== undefined) {
+    params.set('is_escalated', String(filters.is_escalated))
+  }
   return request<PaginatedResponse<EvidenceListItem>>(
-    `/evidence?page=${page}&page_size=${pageSize}`,
+    `/evidence?${params.toString()}`,
     {},
     true,
   )
+}
+
+export async function escalateEvidence(
+  evidenceId: string,
+  notes?: string,
+): Promise<{ is_escalated: boolean; escalated_at: string }> {
+  return request(`/evidence/${evidenceId}/escalate`, {
+    method: 'POST',
+    body: JSON.stringify({ notes: notes || null }),
+  }, true)
+}
+
+export async function deleteEvidence(evidenceId: string): Promise<void> {
+  await request(`/evidence/${evidenceId}`, { method: 'DELETE' }, true)
 }
 
 export async function listTargets(
@@ -269,6 +315,11 @@ export interface CrawlerSettings {
   instagram_username: string
   instagram_password_set: boolean
   instagram_password_configured_in_db: boolean
+  facebook_email: string
+  facebook_password_set: boolean
+  facebook_password_configured_in_db: boolean
+  facebook_access_token_set: boolean
+  threads_uses_instagram_login: boolean
   evidence_screenshot_mode: string
   source: string
 }
@@ -277,6 +328,8 @@ export interface CrawlerSettingsUpdate {
   crawler_demo_mode?: boolean
   instagram_username?: string
   instagram_password?: string
+  facebook_email?: string
+  facebook_password?: string
   evidence_screenshot_mode?: 'pillow' | 'playwright' | 'both'
 }
 

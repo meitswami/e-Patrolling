@@ -24,6 +24,8 @@ export default function SettingsPage() {
   const [demoMode, setDemoMode] = useState(true)
   const [igUser, setIgUser] = useState('')
   const [igPassword, setIgPassword] = useState('')
+  const [fbEmail, setFbEmail] = useState('')
+  const [fbPassword, setFbPassword] = useState('')
   const [screenshotMode, setScreenshotMode] = useState<'pillow' | 'playwright' | 'both'>('both')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -50,6 +52,10 @@ export default function SettingsPage() {
           if (crawlerSettings.instagram_password_set) {
             setIgPassword(PASSWORD_PLACEHOLDER)
           }
+          setFbEmail(crawlerSettings.facebook_email)
+          if (crawlerSettings.facebook_password_set) {
+            setFbPassword(PASSWORD_PLACEHOLDER)
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load settings')
@@ -72,11 +78,17 @@ export default function SettingsPage() {
         instagram_username: igUser.trim() || undefined,
         instagram_password:
           igPassword && igPassword !== PASSWORD_PLACEHOLDER ? igPassword : undefined,
+        facebook_email: fbEmail.trim() || undefined,
+        facebook_password:
+          fbPassword && fbPassword !== PASSWORD_PLACEHOLDER ? fbPassword : undefined,
         evidence_screenshot_mode: screenshotMode,
       })
       setCrawler(updated)
       if (updated.instagram_password_set) {
         setIgPassword(PASSWORD_PLACEHOLDER)
+      }
+      if (updated.facebook_password_set) {
+        setFbPassword(PASSWORD_PLACEHOLDER)
       }
       setSuccess('Crawler settings saved to database.')
     } catch (err) {
@@ -113,7 +125,7 @@ export default function SettingsPage() {
       {isAdmin && !loading && (
         <form onSubmit={handleSave} className="mb-8 space-y-6">
           <section className="rounded-xl border border-patrol-border bg-patrol-card p-5">
-            <h2 className="font-mono text-patrol-accent">Crawler &amp; Instagram</h2>
+            <h2 className="font-mono text-patrol-accent">Crawler platforms</h2>
             <p className="mt-1 text-xs text-patrol-muted">
               Stored in <code className="text-patrol-text">system_settings</code> table
               {crawler?.source === 'database' ? ' (active)' : ' — using .env until saved'}
@@ -160,6 +172,36 @@ export default function SettingsPage() {
               </label>
             </div>
 
+            <h3 className="mt-6 font-mono text-sm text-patrol-accent">Facebook</h3>
+            <p className="mt-1 text-xs text-patrol-muted">
+              Playwright login below, or set FACEBOOK_ACCESS_TOKEN in .env for Graph API (Pages).
+              {crawler?.facebook_access_token_set && ' Token detected in .env.'}
+            </p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm">
+                <span className="text-patrol-muted">Facebook email</span>
+                <input
+                  value={fbEmail}
+                  onChange={(e) => setFbEmail(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-patrol-muted">Facebook password</span>
+                <input
+                  type="password"
+                  value={fbPassword}
+                  onChange={(e) => setFbPassword(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
+                />
+              </label>
+            </div>
+
+            <h3 className="mt-6 font-mono text-sm text-patrol-accent">Threads</h3>
+            <p className="mt-1 text-xs text-patrol-muted">
+              Uses Instagram login above (Meta SSO on threads.net).
+            </p>
+
             <label className="mt-4 block text-sm">
               <span className="text-patrol-muted">Evidence screenshot mode</span>
               <select
@@ -176,8 +218,7 @@ export default function SettingsPage() {
             </label>
 
             <p className="mt-3 text-xs text-patrol-muted">
-              Live Instagram crawls need demo mode off, valid credentials above, and Playwright
-              installed on the server.
+              Live crawls need demo mode off, platform credentials, and Playwright on the server.
             </p>
 
             <button

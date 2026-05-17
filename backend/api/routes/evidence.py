@@ -1,16 +1,26 @@
 """Evidence reports API."""
 
 import math
+from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from api.schemas.common import PaginatedResponse
-from api.schemas.evidence import EvidenceDetail, EvidenceListItem
+from api.schemas.evidence import (
+    EvidenceDetail,
+    EvidenceEscalateRequest,
+    EvidenceEscalateResponse,
+    EvidenceListItem,
+)
 from auth.middleware import get_current_user
+from auth.rbac import require_admin, require_analyst
+from configs.settings import settings
 from database.connection import get_session
 from database.models import AccusedProfile, EvidenceReport, PlatformType, SeverityLevel, TargetAccount, User
 
@@ -119,3 +129,72 @@ async def get_evidence(
     detail.target_username = target_username
     detail.accused_username = accused_username
     return detail
+
+
+@router.get("/{evidence_id}/screenshot")
+async def get_evidence_screenshot(
+    evidence_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(get_current_user),
+):
+    """Serve evidence PNG from storage."""
+    evidence = await session.get(EvidenceReport, evidence_id)
+    if not evidence or not evidence.screenshot_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Screenshot not found")
+    root = settings.EVIDENCE_STORAGE_PATH.parent
+    path = root / evidence.screenshot_path.replace("\\", "/")
+    if not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Screenshot file missing")
+    return FileResponse(path, media_type="image/png", filename=path.name)
+
+
+@router.post("/{evidence_id}/escalate", response_model=EvidenceEscalateResponse)
+async def escalate_evidence(
+    evidence_id: UUID,
+    body: EvidenceEscalateRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_analyst),
+) -> EvidenceEscalateResponse:
+    """Mark evidence as escalated for law-enforcement review."""
+    evidence = await session.get(EvidenceReport, evidence_id)
+    if not evidence:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence not found")
+
+    now = datetime.now(timezone.utc)
+    evidence.is_escalated = True
+    evidence.escalated_at = now
+    if body.notes:
+        evidence.notes = body.notes.strip()
+    custody = dict(evidence.chain_of_custody or {})
+    custody["escalated_by"] = str(current_user.id)
+    custody["escalated_by_email"] = current_user.email
+    evidence.chain_of_custody = custody
+
+    await session.flush()
+    return EvidenceEscalateResponse(
+        id=evidence.id,
+        evidence_id=evidence.evidence_id,
+        is_escalated=evidence.is_escalated,
+        escalated_at=evidence.escalated_at or now,
+        notes=evidence.notes,
+    )
+
+
+@router.delete("/{evidence_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_evidence(
+    evidence_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_admin),
+) -> None:
+    """Permanently delete evidence (admin only)."""
+    evidence = await session.get(EvidenceReport, evidence_id)
+    if not evidence:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence not found")
+
+    if evidence.screenshot_path:
+        root = settings.EVIDENCE_STORAGE_PATH.parent
+        path = root / evidence.screenshot_path.replace("\\", "/")
+        if path.is_file():
+            path.unlink(missing_ok=True)
+
+    await session.delete(evidence)

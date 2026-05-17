@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { API_BASE_URL, SEVERITY_CONFIG } from '@/lib/constants'
 import { listEvidence } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import type { EvidenceListItem } from '@/types'
+import type { EvidenceListItem, SeverityLevel } from '@/types'
 
 function evidenceImageUrl(screenshotPath: string | null): string | null {
   if (!screenshotPath) return null
@@ -21,30 +22,76 @@ export default function EvidencePage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [severity, setSeverity] = useState('')
+  const [escalatedOnly, setEscalatedOnly] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await listEvidence(1, 50, {
+        search: search.trim() || undefined,
+        severity: severity || undefined,
+        is_escalated: escalatedOnly ? true : undefined,
+      })
+      setItems(data.items)
+      setTotal(data.total)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load evidence')
+    } finally {
+      setLoading(false)
+    }
+  }, [search, severity, escalatedOnly])
 
   useEffect(() => {
     if (!isAuthenticated()) {
       router.replace('/login')
       return
     }
-
-    async function load() {
-      try {
-        const data = await listEvidence(1, 50)
-        setItems(data.items)
-        setTotal(data.total)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load evidence')
-      } finally {
-        setLoading(false)
-      }
-    }
-
     load()
-  }, [router])
+  }, [router, load])
 
   return (
     <AppShell title="Evidence Feed" subtitle={`${total} report(s) in database`}>
+      <div className="mb-4 flex flex-wrap gap-3">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && load()}
+          placeholder="Search evidence ID or comment text…"
+          className="min-w-[200px] flex-1 rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-sm text-patrol-text"
+        />
+        <select
+          value={severity}
+          onChange={(e) => setSeverity(e.target.value)}
+          className="rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-sm text-patrol-text"
+        >
+          <option value="">All severities</option>
+          {(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as SeverityLevel[]).map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-2 text-sm text-patrol-muted">
+          <input
+            type="checkbox"
+            checked={escalatedOnly}
+            onChange={(e) => setEscalatedOnly(e.target.checked)}
+          />
+          Escalated only
+        </label>
+        <button
+          type="button"
+          onClick={load}
+          className="rounded-lg bg-patrol-accent px-4 py-2 text-sm font-medium text-patrol-bg"
+        >
+          Apply
+        </button>
+      </div>
+
       {error && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
           {error}
@@ -89,8 +136,18 @@ export default function EvidencePage() {
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="font-mono text-patrol-accent">{item.evidence_id}</span>
+                    <Link
+                      href={`/evidence/${item.id}`}
+                      className="font-mono text-patrol-accent hover:underline"
+                    >
+                      {item.evidence_id}
+                    </Link>
                     <span className={`rounded border px-2 py-0.5 ${sev.className}`}>{sev.label}</span>
+                    {item.is_escalated && (
+                      <span className="rounded border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-red-400">
+                        Escalated
+                      </span>
+                    )}
                     <span className="text-patrol-muted">{item.platform}</span>
                     <span className="text-patrol-muted">Risk {item.risk_score}</span>
                   </div>
@@ -98,9 +155,6 @@ export default function EvidencePage() {
                   <p className="mt-2 text-xs text-patrol-muted">
                     Target: {item.target_username ?? '—'} · Accused: {item.accused_username ?? '—'}
                   </p>
-                  {!imgUrl && (
-                    <p className="mt-2 text-xs text-patrol-muted">No screenshot artifact</p>
-                  )}
                 </div>
               </div>
             </article>

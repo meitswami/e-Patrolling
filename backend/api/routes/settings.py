@@ -37,6 +37,8 @@ async def update_crawler_settings(
             crawler_demo_mode=body.crawler_demo_mode,
             instagram_username=body.instagram_username,
             instagram_password=body.instagram_password,
+            facebook_email=body.facebook_email,
+            facebook_password=body.facebook_password,
             evidence_screenshot_mode=body.evidence_screenshot_mode,
             updated_by=current_user.id,
         )

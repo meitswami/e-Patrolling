@@ -30,8 +30,21 @@ class EvidenceDetail(EvidenceListItem):
     post_url: Optional[str]
     comment_timestamp: Optional[datetime]
     notes: Optional[str]
+    escalated_at: Optional[datetime] = None
     target_id: Optional[UUID]
     accused_id: Optional[UUID]
+
+
+class EvidenceEscalateRequest(BaseModel):
+    notes: Optional[str] = Field(None, max_length=2000)
+
+
+class EvidenceEscalateResponse(BaseModel):
+    id: UUID
+    evidence_id: str
+    is_escalated: bool
+    escalated_at: datetime
+    notes: Optional[str]
 
 
 class EvidenceFilters(BaseModel):

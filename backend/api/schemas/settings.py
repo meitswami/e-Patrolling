@@ -10,6 +10,11 @@ class CrawlerSettingsResponse(BaseModel):
     instagram_username: str
     instagram_password_set: bool
     instagram_password_configured_in_db: bool
+    facebook_email: str = ""
+    facebook_password_set: bool = False
+    facebook_password_configured_in_db: bool = False
+    facebook_access_token_set: bool = False
+    threads_uses_instagram_login: bool = True
     evidence_screenshot_mode: str
     source: str
 
@@ -18,6 +23,12 @@ class CrawlerSettingsUpdate(BaseModel):
     crawler_demo_mode: Optional[bool] = None
     instagram_username: Optional[str] = Field(None, max_length=255)
     instagram_password: Optional[str] = Field(
+        None,
+        max_length=512,
+        description="Leave empty or send ******** to keep existing password",
+    )
+    facebook_email: Optional[str] = Field(None, max_length=255)
+    facebook_password: Optional[str] = Field(
         None,
         max_length=512,
         description="Leave empty or send ******** to keep existing password",

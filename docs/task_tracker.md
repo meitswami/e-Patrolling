@@ -64,13 +64,25 @@ Repository was partially generated then manually recovered. **Tracker previously
 23. ✅ Dashboard + Live Monitoring platform cards (active vs planned)
 24. ✅ Target create restricted to patrol-enabled platforms; layout CSS fallback
 
-### Sprint R8 — IN PROGRESS (2026-05-17)
+### Sprint R10 — Evidence ops + CI + AI lexicon ✅ (2026-05-17)
+32. ✅ Evidence escalate API + admin delete + screenshot route
+33. ✅ Evidence UI: search/filter, escalate notes, delete (admin)
+34. ✅ GitHub Actions CI (pytest + frontend build)
+35. ✅ External `abuse_lexicon.json` wired to keyword engine
+
+### Sprint R9 — Platform live crawlers ✅ (2026-05-17)
+29. ✅ Facebook live: Graph API token path + Playwright login + HTML parser
+30. ✅ Threads live: Playwright via Instagram SSO + parser
+31. ✅ Admin settings: Facebook email/password fields
+
+### Sprint R8 — ✅ (2026-05-17)
 22. ⬜ WhatsApp crawler (deferred)
 23. ✅ Playwright screenshot path wired (pipeline + `EVIDENCE_SCREENSHOT_MODE`; IG live when demo off)
 24. ✅ Scheduler hardening (overlap lock, max_instances=1, last-run status on API/UI)
 25. ✅ Evidence feed thumbnails + per-target **Run crawl** on Targets page
 26. ✅ Admin Settings UI → `system_settings` table (crawler demo, IG creds, screenshot mode)
-27. ⬜ Unit tests + Docker prod images
+27. ✅ Unit tests (`tests/`) + Docker images (`docker/backend.Dockerfile`, `docker/frontend.Dockerfile`)
+28. ✅ Evidence detail page `/evidence/[id]`
 
 ### Sprint R4+ — Crawler → AI → evidence (per original phases 3–5)
 
@@ -81,14 +93,14 @@ Repository was partially generated then manually recovered. **Tracker previously
 ```
 Phase 1: Architecture & Scaffolding  ███████░░░░░░░░░░░░░  35% 🔄
 Phase 2: Database & Auth             ████████████░░░░░░░░  60% 🔄
-Phase 3: Platform Crawlers           ██████████░░░░░░░░░░  50% 🔄 (IG, FB, TW, Threads — patrol active)
-Phase 4: AI Engine                   ████████░░░░░░░░░░░░  40% 🔄 (+ Indic DeBERTa opt-in)
-Phase 5: Evidence Engine             ██████░░░░░░░░░░░░░░  30% 🔄 (screenshot cards)
-Phase 6: Dashboard & WebSockets      ██████████░░░░░░░░░░  50% 🔄 (analytics + regions UI)
+Phase 3: Platform Crawlers           ██████████████░░░░░░  65% 🔄 (IG/FB/Threads live paths + TW API)
+Phase 4: AI Engine                   ██████████░░░░░░░░░░  45% 🔄 (lexicon JSON)
+Phase 5: Evidence Engine             ████████████░░░░░░░░  55% 🔄 (escalate/delete/screenshot)
+Phase 6: Dashboard & WebSockets      ███████████░░░░░░░░░  55% 🔄
 Phase 7: Reports & Exports           ██████░░░░░░░░░░░░░░  30% 🔄 (CSV + PDF)
-Phase 8: Testing & Polish            ░░░░░░░░░░░░░░░░░░░░   0% ⬜
+Phase 8: Testing & Polish            ████████░░░░░░░░░░░░  35% 🔄 (CI + pytest)
 
-OVERALL MVP: █████████████░░░░░░░  ~42%
+OVERALL MVP: ████████████████░░░░  ~60%
 ```
 
 ---
@@ -102,8 +114,8 @@ OVERALL MVP: █████████████░░░░░░░  ~42%
 - ✅ README.md
 - ✅ .env.example (2026-05-17)
 - ✅ docker-compose.yml (references missing Dockerfiles/workers)
-- ⬜ backend/Dockerfile
-- ⬜ frontend/Dockerfile
+- ✅ docker/backend.Dockerfile (2026-05-17)
+- ✅ docker/frontend.Dockerfile (2026-05-17)
 
 ### 1.2 Backend Skeleton
 - ✅ backend/main.py (imports OK; routes deferred until Sprint R2+)

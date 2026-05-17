@@ -56,8 +56,8 @@ services:
   # ──────────────────────────────────────────────────────
   backend:
     build:
-      context: ./backend
-      dockerfile: ../docker/backend.Dockerfile
+      context: .
+      dockerfile: docker/backend.Dockerfile
     container_name: patrol_backend
     restart: unless-stopped
     environment:
@@ -73,10 +73,10 @@ services:
       CRAWLER_HEADLESS: ${CRAWLER_HEADLESS:-true}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REDIS_ENABLED: "true"
     volumes:
-      - ./backend:/app
       - ./storage:/app/storage
-      - ./ai_models:/app/ai_models
+      - ./ai_models:/ai_models
     ports:
       - "8000:8000"
     depends_on:
@@ -97,12 +97,13 @@ services:
   # AI Worker — Processes abuse detection queue
   # ──────────────────────────────────────────────────────
   ai_worker:
+    profiles: ["workers"]
     build:
-      context: ./backend
-      dockerfile: ../docker/backend.Dockerfile
+      context: .
+      dockerfile: docker/backend.Dockerfile
     container_name: patrol_ai_worker
     restart: unless-stopped
-    command: python -m task_queue.consumer
+    command: ["python", "-c", "import asyncio; from task_queue.consumer import _consumer_loop; asyncio.run(_consumer_loop())"]
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-patrol}:${POSTGRES_PASSWORD:-patrol_secret}@postgres:5432/${POSTGRES_DB:-patrol_db}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
@@ -112,9 +113,8 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - ./backend:/app
       - ./storage:/app/storage
-      - ./ai_models:/app/ai_models
+      - ./ai_models:/ai_models
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,15 +124,16 @@ services:
       - patrol_net
 
   # ──────────────────────────────────────────────────────
-  # Crawler Worker — Runs platform crawlers
+  # Crawler Worker — optional (scheduler runs inside API by default)
   # ──────────────────────────────────────────────────────
   crawler_worker:
+    profiles: ["workers"]
     build:
-      context: ./backend
-      dockerfile: ../docker/backend.Dockerfile
+      context: .
+      dockerfile: docker/backend.Dockerfile
     container_name: patrol_crawler
     restart: unless-stopped
-    command: python -m task_queue.scheduler
+    command: ["python", "-c", "from task_queue.scheduler import start_scheduler; import asyncio; start_scheduler(); asyncio.get_event_loop().run_forever()"]
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-patrol}:${POSTGRES_PASSWORD:-patrol_secret}@postgres:5432/${POSTGRES_DB:-patrol_db}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379/0
@@ -142,7 +143,6 @@ services:
       EVIDENCE_STORAGE_PATH: /app/storage/evidence
       ENVIRONMENT: ${ENVIRONMENT:-development}
     volumes:
-      - ./backend:/app
       - ./storage:/app/storage
     depends_on:
       postgres:
@@ -157,8 +157,11 @@ services:
   # ──────────────────────────────────────────────────────
   frontend:
     build:
-      context: ./frontend
-      dockerfile: ../docker/frontend.Dockerfile
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
     container_name: patrol_frontend
     restart: unless-stopped
     environment:

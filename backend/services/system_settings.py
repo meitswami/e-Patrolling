@@ -26,6 +26,8 @@ SETTING_KEYS = frozenset(
         "crawler_demo_mode",
         "instagram_username",
         "instagram_password",
+        "facebook_email",
+        "facebook_password",
         "evidence_screenshot_mode",
     }
 )
@@ -115,6 +117,32 @@ def has_instagram_password_in_db() -> bool:
     return bool(_raw("instagram_password"))
 
 
+def get_facebook_email() -> Optional[str]:
+    raw = _raw("facebook_email")
+    if raw is not None and raw.strip():
+        return raw.strip()
+    return None
+
+
+def get_facebook_password() -> Optional[str]:
+    raw = _raw("facebook_password")
+    if raw:
+        try:
+            return decrypt_secret(raw)
+        except Exception as exc:
+            logger.error("Failed to decrypt facebook_password: %s", exc)
+            return None
+    return None
+
+
+def facebook_credentials_configured() -> bool:
+    return bool(get_facebook_email() and get_facebook_password())
+
+
+def has_facebook_password_in_db() -> bool:
+    return bool(_raw("facebook_password"))
+
+
 async def get_crawler_settings_public() -> dict[str, Any]:
     """Safe view for API (no plaintext password)."""
     return {
@@ -122,6 +150,11 @@ async def get_crawler_settings_public() -> dict[str, Any]:
         "instagram_username": get_instagram_username() or "",
         "instagram_password_set": instagram_credentials_configured(),
         "instagram_password_configured_in_db": has_instagram_password_in_db(),
+        "facebook_email": get_facebook_email() or "",
+        "facebook_password_set": facebook_credentials_configured(),
+        "facebook_password_configured_in_db": has_facebook_password_in_db(),
+        "facebook_access_token_set": bool(settings.FACEBOOK_ACCESS_TOKEN),
+        "threads_uses_instagram_login": True,
         "evidence_screenshot_mode": get_evidence_screenshot_mode(),
         "source": "database" if _loaded and _cache else "environment",
     }
@@ -133,6 +166,8 @@ async def upsert_crawler_settings(
     crawler_demo_mode: Optional[bool] = None,
     instagram_username: Optional[str] = None,
     instagram_password: Optional[str] = None,
+    facebook_email: Optional[str] = None,
+    facebook_password: Optional[str] = None,
     evidence_screenshot_mode: Optional[str] = None,
     updated_by: Optional[Any] = None,
 ) -> dict[str, Any]:
@@ -150,6 +185,14 @@ async def upsert_crawler_settings(
         if pwd and pwd != MASKED_SECRET:
             updates["instagram_password"] = encrypt_secret(pwd)
 
+    if facebook_email is not None:
+        updates["facebook_email"] = facebook_email.strip()
+
+    if facebook_password is not None:
+        pwd = facebook_password.strip()
+        if pwd and pwd != MASKED_SECRET:
+            updates["facebook_password"] = encrypt_secret(pwd)
+
     if evidence_screenshot_mode is not None:
         mode = evidence_screenshot_mode.strip().lower()
         if mode not in ("pillow", "playwright", "both"):
@@ -159,7 +202,7 @@ async def upsert_crawler_settings(
     for key, value in updates.items():
         result = await session.execute(select(SystemSetting).where(SystemSetting.key == key))
         row = result.scalar_one_or_none()
-        is_secret = key == "instagram_password"
+        is_secret = key in ("instagram_password", "facebook_password")
         if row:
             row.value = value
             row.is_secret = is_secret

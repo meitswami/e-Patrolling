@@ -1,11 +1,16 @@
 """Fast keyword / pattern matching for abuse detection (no ML required)."""
 
+import json
 import re
 from dataclasses import dataclass, field
-from typing import List
+from pathlib import Path
+from typing import List, Tuple
 
-# Curated lexicon — extend from ai/prompts or external file later
-_ABUSE_PATTERNS: List[tuple[str, float, str]] = [
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+_DEFAULT_PATTERNS: List[tuple[str, float, str]] = [
     (r"\b(rape|balatkar|balaatkar)\b", 0.95, "rape_threat"),
     (r"\b(mar\s*dal|maar\s*dal|kill\s*you|kill\s*her)\b", 0.9, "threat"),
     (r"\b(bahar\s*aa|nikal\s*ke|dekh\s*lunga|dekh\s*lunga)\b", 0.75, "stalking"),
@@ -16,7 +21,28 @@ _ABUSE_PATTERNS: List[tuple[str, float, str]] = [
     (r"\b(sabak|sikhaunga|sikhaunga)\b", 0.72, "threat"),
 ]
 
-_COMPILED = [(re.compile(p, re.IGNORECASE), score, label) for p, score, label in _ABUSE_PATTERNS]
+_LEXICON_PATH = Path(__file__).resolve().parents[2] / "ai_models" / "configs" / "abuse_lexicon.json"
+
+
+def _load_patterns() -> List[tuple[str, float, str]]:
+    if not _LEXICON_PATH.is_file():
+        return _DEFAULT_PATTERNS
+    try:
+        data = json.loads(_LEXICON_PATH.read_text(encoding="utf-8"))
+        patterns = []
+        for row in data.get("patterns", []):
+            patterns.append((row["regex"], float(row["score"]), row["label"]))
+        if patterns:
+            logger.info("Loaded %d abuse patterns from lexicon", len(patterns))
+            return patterns
+    except (json.JSONDecodeError, KeyError, OSError) as exc:
+        logger.warning("Lexicon load failed, using defaults: %s", exc)
+    return _DEFAULT_PATTERNS
+
+
+_COMPILED: List[Tuple[re.Pattern, float, str]] = [
+    (re.compile(p, re.IGNORECASE), score, label) for p, score, label in _load_patterns()
+]
 
 
 @dataclass
