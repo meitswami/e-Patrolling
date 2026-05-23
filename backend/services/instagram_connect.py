@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import time
 from typing import Any, Optional
@@ -16,9 +17,19 @@ LOGIN_TIMEOUT_SEC = 300
 LOGIN_URL_MARKERS = ("accounts/login", "/login?")
 
 
+def _configure_playwright_platform() -> None:
+    """Ubuntu 26.04 has no Playwright browser manifest yet — use 24.04 builds."""
+    os.environ.setdefault("PLAYWRIGHT_HOST_PLATFORM_OVERRIDE", "ubuntu24.04-x64")
+
+
+def _has_graphical_display() -> bool:
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
 async def _launch_browser(headless: bool = False):
     from playwright.async_api import async_playwright
 
+    _configure_playwright_platform()
     playwright = await async_playwright().start()
     launch_args = {
         "headless": headless,
@@ -30,7 +41,8 @@ async def _launch_browser(headless: bool = False):
         ],
     }
     browser = None
-    for channel in ("chrome", "msedge", None):
+    # Bundled Playwright Chromium first (matches `playwright install chromium` on EC2).
+    for channel in (None, "chrome", "msedge"):
         try:
             if channel:
                 browser = await playwright.chromium.launch(channel=channel, **launch_args)
@@ -38,11 +50,13 @@ async def _launch_browser(headless: bool = False):
                 browser = await playwright.chromium.launch(**launch_args)
             break
         except Exception as exc:
-            logger.debug("Launch channel %s failed: %s", channel, exc)
+            logger.debug("Launch channel %s failed: %s", channel or "chromium", exc)
     if not browser:
         await playwright.stop()
         raise RuntimeError(
-            "Could not start a browser. Install Chrome or run: python -m playwright install chromium"
+            "Could not start a browser. On the server run: "
+            "export PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 && "
+            "python -m playwright install chromium"
         )
     return playwright, browser
 
@@ -101,6 +115,19 @@ async def connect_instagram_via_browser() -> dict[str, Any]:
     browser = None
     context = None
     page = None
+
+    if not _has_graphical_display():
+        return {
+            "success": False,
+            "message": (
+                "This API runs on a headless server (no screen). Connect on your PC: "
+                "open http://localhost:3000/settings → Connect Instagram, log in, then copy "
+                "storage/sessions/instagram_state.json and instagram_meta.json to "
+                "~/e-Patrolling/storage/sessions/ on EC2 and click Verify session."
+            ),
+            "username": None,
+            "session_saved": False,
+        }
 
     try:
         playwright, browser = await _launch_browser(headless=False)

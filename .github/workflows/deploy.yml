@@ -34,6 +34,10 @@ jobs:
             pip install -U pip -q
             pip install -r requirements.txt -q
 
+            # Playwright Chromium (Ubuntu 26.04 needs platform override)
+            export PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64
+            python -m playwright install chromium 2>/dev/null || true
+
             # Bootstrap .env (never committed — must exist on EC2)
             if [ ! -f .env ]; then
               cp .env.example .env
@@ -53,6 +57,10 @@ jobs:
             fi
             if ! grep -q '^ENVIRONMENT=' .env; then
               echo 'ENVIRONMENT=production' >> .env
+            fi
+            # Avoid blocking startup on small EC2 (ML preload downloads multi-GB models)
+            if grep -q '^PRELOAD_AI_MODELS=true' .env; then
+              sed -i 's/^PRELOAD_AI_MODELS=true/PRELOAD_AI_MODELS=false/' .env
             fi
 
             # Optional GitHub repo secrets (Settings → Secrets → Actions)
