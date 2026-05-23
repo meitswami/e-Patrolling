@@ -118,12 +118,12 @@ class Settings(BaseSettings):
     USE_ML_CLASSIFIER: bool = False  # Set true to enable local HF model (downloads on first run)
     USE_MULTILINGUAL_TOXIC: bool = True  # When ML on: textdetox/bert-multilingual-toxicity-classifier (hi+en)
     USE_INDICBERT: bool = False  # Hindi/Hinglish DeBERTa abuse model (large download)
-    INDIC_ABUSE_MODEL: str = "Hate-speech-CNERG/dehatebert-mono-indic"
+    INDIC_ABUSE_MODEL: str = "Hate-speech-CNERG/indic-abusive-allInOne-MuRIL"
     CAPTURE_EVIDENCE_SCREENSHOTS: bool = True  # Master toggle for evidence PNGs
     EVIDENCE_SCREENSHOT_MODE: str = "both"  # pillow | playwright | both
 
     # HuggingFace model identifiers
-    INDICBERT_MODEL: str = "ai4bharat/IndicBERT"
+    INDICBERT_MODEL: str = "ai4bharat/indic-bert"
     MINILM_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     TOXIC_BERT_MODEL: str = "unitary/toxic-bert"
     MULTILINGUAL_TOXIC_MODEL: str = "textdetox/bert-multilingual-toxicity-classifier"

@@ -15,7 +15,7 @@
       "notes": "Preferred for PATROL Hindi/English/Hinglish monitoring"
     },
     "hindi_hate": {
-      "id": "Hate-speech-CNERG/dehatebert-mono-indic",
+      "id": "Hate-speech-CNERG/indic-abusive-allInOne-MuRIL",
       "task": "text-classification",
       "env": "INDIC_ABUSE_MODEL",
       "notes": "Hindi hate speech; enable USE_INDICBERT"
