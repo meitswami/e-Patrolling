@@ -23,6 +23,20 @@ engine: Optional[AsyncEngine] = None
 async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
 
+def database_host_hint() -> str:
+    """Hostname from DATABASE_URL (for /health debugging, no secrets)."""
+    try:
+        url = _normalize_async_database_url(
+            _resolve_database_url_ipv4(settings.DATABASE_URL)
+        )
+        host = make_url(url).host or "unknown"
+        if host.startswith("db.") and host.endswith(".supabase.co"):
+            return f"{host} (IPv6-only — use pooler.supabase.com on EC2)"
+        return host
+    except Exception:
+        return "unknown"
+
+
 def _normalize_async_database_url(database_url: str) -> str:
     """
     Supabase dashboard URIs use postgresql:// — SQLAlchemy then imports psycopg2.

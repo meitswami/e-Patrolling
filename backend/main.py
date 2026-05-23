@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             "❌ Database host unreachable (%s). "
             "EC2 needs outbound internet (IGW/NAT) and port 5432 open. "
             "Use repo-root .env or backend/.env with DATABASE_URL; "
-            "prefer direct host db.<project>.supabase.co:5432 over pooler if routing fails.",
+            "On EC2 use Session pooler host (aws-*-REGION.pooler.supabase.com), not db.<project>.supabase.co (IPv6-only).",
             exc,
         )
     except Exception as exc:
@@ -205,17 +205,27 @@ async def health_check():
         except Exception as exc:
             db_status = f"error: {exc}"
 
+    from database.connection import database_host_hint
+
     overall = "healthy" if db_status == "connected" else "degraded"
-    return {
+    payload = {
         "status": overall,
         "service": "PATROL API",
         "version": "1.0.0-MVP",
         "environment": settings.ENVIRONMENT,
         "database": db_status,
+        "database_host": database_host_hint(),
         "redis": "connected" if is_redis_available() else "disabled",
         "cors_origins": settings.effective_cors_origins,
         "cors_origin_regex": _cors_regex,
     }
+    if overall != "healthy":
+        payload["fix"] = (
+            "EC2: set DATABASE_URL to Session pooler (postgresql+asyncpg://postgres.PROJECT_REF:pass@"
+            "aws-*-REGION.pooler.supabase.com:5432/postgres). "
+            "Not db.PROJECT.supabase.co (IPv6)."
+        )
+    return payload
 
 
 @app.get("/", tags=["System"])

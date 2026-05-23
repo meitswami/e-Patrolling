@@ -30,8 +30,8 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                "Database unreachable from API server. "
-                "Check EC2 outbound internet and DATABASE_URL in .env."
+                "Database unreachable from API server (often IPv6-only db.*.supabase.co on EC2). "
+                "Use Session pooler in ~/e-Patrolling/.env — see GET /health database_host."
             ),
         ) from exc
     except Exception as exc:

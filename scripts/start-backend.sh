@@ -22,5 +22,14 @@ if ! command -v uvicorn >/dev/null 2>&1; then
   exit 1
 fi
 
+# Warn before PM2 boots a broken production config (db.* = IPv6-only on EC2).
+for envfile in "$ROOT/.env" "$ROOT/backend/.env"; do
+  if [ -f "$envfile" ] && grep -qE '^DATABASE_URL=.*@db\.[^.]+\.supabase\.co' "$envfile"; then
+    echo "ERROR: $envfile uses direct db.*.supabase.co (IPv6). EC2 needs Session pooler host." >&2
+    echo "  Supabase Dashboard → Connect → Session pooler → postgresql+asyncpg://..." >&2
+    exit 1
+  fi
+done
+
 cd "$ROOT/backend"
 exec uvicorn main:app --host 0.0.0.0 --port 5000
