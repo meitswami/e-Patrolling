@@ -36,8 +36,10 @@ Supabase **direct** host `db.<project>.supabase.co` resolves to **IPv6 only**. T
 
 1. Supabase Dashboard → your project → **Connect** → **ORMs** or **Connection string**
 2. Copy **Session pooler** (port **5432**) — not “Direct connection”
-3. Change the prefix to `postgresql+asyncpg://`
+3. Change the prefix to **`postgresql+asyncpg://`** (required — plain `postgresql://` crashes with `No module named 'psycopg2'`)
 4. Username is **`postgres.whzmtzatkxgiomwlwkgy`** (not plain `postgres`)
+
+The backend auto-fixes `postgresql://` → `postgresql+asyncpg://` if you forget, but set it explicitly in `.env`.
 
 Example (replace host + password from dashboard — **do not guess** `aws-0` vs `aws-1`):
 

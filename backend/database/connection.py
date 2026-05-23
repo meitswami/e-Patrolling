@@ -23,6 +23,19 @@ engine: Optional[AsyncEngine] = None
 async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
 
+def _normalize_async_database_url(database_url: str) -> str:
+    """
+    Supabase dashboard URIs use postgresql:// — SQLAlchemy then imports psycopg2.
+    This app requires asyncpg: postgresql+asyncpg://
+    """
+    url = database_url.strip()
+    if url.startswith("postgres://"):
+        return "postgresql+asyncpg://" + url[len("postgres://") :]
+    if url.startswith("postgresql://") and "+asyncpg" not in url.split("://", 1)[0]:
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
 def _resolve_database_url_ipv4(database_url: str) -> str:
     """
     Resolve DB hostname to IPv4 when DATABASE_FORCE_IPV4 is set.
@@ -58,7 +71,8 @@ def _resolve_database_url_ipv4(database_url: str) -> str:
                 host,
                 ipv4,
             )
-            return parsed.set(host=ipv4).render_as_string(hide_password=False)
+            rendered = parsed.set(host=ipv4).render_as_string(hide_password=False)
+            return _normalize_async_database_url(rendered)
     except (socket.gaierror, IndexError, OSError) as exc:
         logger.warning("IPv4 resolution failed for %s: %s", host, exc)
     return database_url
@@ -86,7 +100,15 @@ async def init_db() -> None:
             ctx.verify_mode = ssl.CERT_NONE
             connect_args["ssl"] = ctx
 
-    db_url = _resolve_database_url_ipv4(settings.DATABASE_URL)
+    db_url = _normalize_async_database_url(
+        _resolve_database_url_ipv4(settings.DATABASE_URL)
+    )
+    if "+asyncpg" not in db_url.split("://", 1)[0]:
+        raise RuntimeError(
+            "DATABASE_URL must use asyncpg (postgresql+asyncpg://). "
+            "Supabase URI from dashboard needs +asyncpg after postgresql."
+        )
+    logger.info("Database URL driver: %s", db_url.split("://", 1)[0])
     engine = create_async_engine(
         db_url,
         pool_size=10,
