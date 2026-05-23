@@ -11,7 +11,7 @@ import {
   clearCrawlErrorLogs,
   getCrawlerStatus,
   listCrawlLogs,
-  runCrawlAll,
+  scheduleCrawlAll,
   stopCrawlAll,
   type CrawlLogItem,
   type CrawlerStatus,
@@ -58,6 +58,7 @@ export default function MonitoringPage() {
       const [st, logRows] = await Promise.all([getCrawlerStatus(), listCrawlLogs(15)])
       setStatus(st)
       setLogs(logRows)
+      setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load monitoring')
     } finally {
@@ -93,12 +94,8 @@ export default function MonitoringPage() {
     setRunning(true)
     setError(null)
     try {
-      const results = await runCrawlAll()
-      const ok = results.filter((r) => r.success).length
-      const names = results
-        .map((r) => (r.target_username ? `@${r.target_username}` : r.target_id))
-        .join(', ')
-      setLastRun(`Crawl-all complete: ${ok}/${results.length} targets (${names})`)
+      const res = await scheduleCrawlAll()
+      setLastRun(res.message || `Crawl-all ${res.status}`)
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Crawl failed')

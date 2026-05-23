@@ -10,8 +10,8 @@ import {
   createTarget,
   getCrawlerStatus,
   listTargets,
-  runCrawlTarget,
   runHistoricalCrawl,
+  startCrawlTarget,
   updateTarget,
   type RunningCrawlInfo,
 } from '@/lib/api'
@@ -85,32 +85,31 @@ export default function TargetsPage() {
     setCrawlMessage(null)
     setError(null)
     try {
-      const result = historical
-        ? await runHistoricalCrawl(targetId)
-        : await runCrawlTarget(targetId)
-      if (result.success) {
-        const proof =
-          result.evidence_ids && result.evidence_ids.length > 0
-            ? ` · ${result.evidence_ids.length} evidence (view in Live Monitoring)`
-            : ''
-        const hist =
-          result.historical && result.posts_crawled
-            ? ` · ${result.posts_crawled} posts scanned`
-            : result.historical
-              ? ' · historical crawl'
+      if (historical) {
+        const result = await runHistoricalCrawl(targetId)
+        if (result.success) {
+          const proof =
+            result.evidence_ids && result.evidence_ids.length > 0
+              ? ` · ${result.evidence_ids.length} evidence (view in Live Monitoring)`
               : ''
-        setCrawlMessage(
-          `@${username}: +${result.comments_new} new, ${result.abusive_detected} abusive${hist}${proof}`,
-        )
-        if (result.log_id) {
+          const hist =
+            result.posts_crawled
+              ? ` · ${result.posts_crawled} posts scanned`
+              : ' · historical crawl'
           setCrawlMessage(
-            (m) =>
-              `${m} — ` +
-              `results: /monitoring/log/${result.log_id}`,
+            `@${username}: +${result.comments_new} new, ${result.abusive_detected} abusive${hist}${proof}`,
           )
+          if (result.log_id) {
+            setCrawlMessage(
+              (m) => `${m} — results: /monitoring/log/${result.log_id}`,
+            )
+          }
+        } else {
+          setError(result.error ?? `Crawl failed for @${username}`)
         }
       } else {
-        setError(result.error ?? `Crawl failed for @${username}`)
+        const res = await startCrawlTarget(targetId)
+        setCrawlMessage(`@${username}: crawl ${res.status} — watch Live Monitoring for results`)
       }
       await refreshStatus()
     } catch (err) {

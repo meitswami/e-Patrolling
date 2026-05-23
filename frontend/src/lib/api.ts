@@ -408,8 +408,27 @@ export async function getCrawlLogResults(logId: string): Promise<CrawlLogResults
   return request<CrawlLogResults>(`/crawlers/logs/${logId}/results`, {}, true)
 }
 
+/** Blocking — holds API for minutes; avoid on production. Prefer scheduleCrawlAll. */
 export async function runCrawlAll(): Promise<CrawlResultSummary[]> {
   return request<CrawlResultSummary[]>('/crawlers/run-all', { method: 'POST' }, true)
+}
+
+export async function scheduleCrawlAll(): Promise<{ status: string; message: string }> {
+  return request<{ status: string; message: string }>(
+    '/crawlers/schedule-all',
+    { method: 'POST' },
+    true,
+  )
+}
+
+export async function startCrawlTarget(
+  targetId: string,
+): Promise<{ status: string; message: string; target_id?: string }> {
+  return request<{ status: string; message: string; target_id?: string }>(
+    `/crawlers/start/${targetId}`,
+    { method: 'POST' },
+    true,
+  )
 }
 
 export async function stopCrawlAll(): Promise<{ status: string; message: string }> {
