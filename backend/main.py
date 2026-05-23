@@ -259,8 +259,16 @@ def register_routers() -> None:
     from api.routes.regions import router as regions_router
     from api.routes.reports import router as reports_router
     from api.routes.settings import router as settings_router
+    from api.routes.public import router as public_router
+    from api.routes.website_requests import router as website_requests_router
     from api.routes.websocket import router as ws_router
 
+    app.include_router(public_router, prefix=f"{PREFIX}/public", tags=["Public Website"])
+    app.include_router(
+        website_requests_router,
+        prefix=f"{PREFIX}/website-requests",
+        tags=["Website Intake"],
+    )
     app.include_router(auth_router, prefix=f"{PREFIX}/auth", tags=["Authentication"])
     app.include_router(targets_router, prefix=f"{PREFIX}/targets", tags=["Target Accounts"])
     app.include_router(evidence_router, prefix=f"{PREFIX}/evidence", tags=["Evidence"])

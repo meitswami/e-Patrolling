@@ -41,7 +41,7 @@ export default function AccusedDossierPage() {
 
   useEffect(() => {
     if (!isAuthenticated()) {
-      router.replace('/login')
+      router.replace('/admin')
       return
     }
     if (!username) return

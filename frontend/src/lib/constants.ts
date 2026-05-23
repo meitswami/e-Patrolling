@@ -3,6 +3,7 @@ import type { Platform, SeverityLevel } from '@/types'
 export const NAV_ITEMS = [
   { label: 'Overview', path: '/dashboard', icon: 'LayoutDashboard' as const },
   { label: 'Targets', path: '/targets', icon: 'Crosshair' as const },
+  { label: 'Website Intake', path: '/website-requests', icon: 'Globe' as const },
   { label: 'Live Monitoring', path: '/monitoring', icon: 'Radio' as const, badge: 'LIVE' },
   { label: 'Evidence Feed', path: '/evidence', icon: 'ShieldAlert' as const },
   { label: 'Region Intel', path: '/regions', icon: 'Map' as const },

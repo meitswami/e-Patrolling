@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from database.models import PlatformType
+from database.models import PlatformType, TargetSource
 
 
 class TargetCreate(BaseModel):
@@ -53,6 +53,8 @@ class TargetResponse(BaseModel):
     inferred_region: Optional[str]
     region_confidence: Optional[float]
     notes: Optional[str]
+    source: TargetSource = TargetSource.ADMIN_PANEL
+    website_request_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 

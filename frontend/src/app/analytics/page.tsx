@@ -14,7 +14,7 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     if (!isAuthenticated()) {
-      router.replace('/login')
+      router.replace('/admin')
       return
     }
     getAnalyticsOverview()

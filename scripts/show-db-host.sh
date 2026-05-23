@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 for f in "$ROOT/.env" "$ROOT/backend/.env"; do
   if [ -f "$f" ]; then
     echo "=== $f ==="
-    grep '^DATABASE_URL=' "$f" | sed -E 's#(postgresql(\+asyncpg)?://[^:@]+):[^@]*@#\1:***@#'
+    grep -E '^[[:space:]]*DATABASE_URL=' "$f" | sed -E 's#(postgresql(\+asyncpg)?://[^:@]+):[^@]*@#\1:***@#'
     grep '^DATABASE_FORCE_IPV4=' "$f" 2>/dev/null || true
   fi
 done

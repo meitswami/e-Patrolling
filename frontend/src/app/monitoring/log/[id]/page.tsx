@@ -30,7 +30,7 @@ export default function CrawlLogResultsPage() {
 
   useEffect(() => {
     if (!isAuthenticated()) {
-      router.replace('/login')
+      router.replace('/admin')
       return
     }
     async function load() {
@@ -101,15 +101,13 @@ export default function CrawlLogResultsPage() {
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <AbuseCategoryBadges categories={ev.abuse_categories ?? []} />
-                      <span
-                        className="rounded border px-2 py-0.5 text-xs font-medium"
-                        style={{
-                          borderColor: sev?.color,
-                          color: sev?.color,
-                        }}
-                      >
-                        {ev.severity}
-                      </span>
+                      {sev && (
+                        <span
+                          className={`rounded border px-2 py-0.5 text-xs font-medium ${sev.className}`}
+                        >
+                          {sev.label}
+                        </span>
+                      )}
                       <span className="font-mono text-sm text-patrol-accent">
                         {ev.evidence_id}
                       </span>

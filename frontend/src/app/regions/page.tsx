@@ -13,7 +13,7 @@ export default function RegionsPage() {
 
   useEffect(() => {
     if (!isAuthenticated()) {
-      router.replace('/login')
+      router.replace('/admin')
       return
     }
     listRegions()

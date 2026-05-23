@@ -54,7 +54,7 @@ export default function EvidencePage() {
 
   useEffect(() => {
     if (!isAuthenticated()) {
-      router.replace('/login')
+      router.replace('/admin')
       return
     }
     load()

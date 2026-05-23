@@ -31,7 +31,7 @@ export default function ReportsPage() {
   const stamp = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
-    if (!isAuthenticated()) router.replace('/login')
+    if (!isAuthenticated()) router.replace('/admin')
   }, [router])
 
   return (

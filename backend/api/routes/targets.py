@@ -13,7 +13,7 @@ from auth.middleware import get_current_user
 from auth.rbac import require_admin, require_analyst
 from database.connection import get_session
 from crawlers.registry import is_patrol_platform
-from database.models import PlatformType, TargetAccount, User
+from database.models import PlatformType, TargetAccount, TargetSource, User
 
 router = APIRouter()
 
@@ -24,6 +24,7 @@ async def list_targets(
     page_size: int = Query(20, ge=1, le=100),
     platform: PlatformType | None = None,
     is_active: bool | None = None,
+    source: TargetSource | None = None,
     session: AsyncSession = Depends(get_session),
     _user: User = Depends(get_current_user),
 ) -> PaginatedResponse[TargetResponse]:
@@ -37,6 +38,9 @@ async def list_targets(
     if is_active is not None:
         query = query.where(TargetAccount.is_active == is_active)
         count_query = count_query.where(TargetAccount.is_active == is_active)
+    if source is not None:
+        query = query.where(TargetAccount.source == source)
+        count_query = count_query.where(TargetAccount.source == source)
 
     total = await session.scalar(count_query) or 0
     offset = (page - 1) * page_size
@@ -81,7 +85,11 @@ async def create_target(
             detail="Target already exists for this username and platform",
         )
 
-    target = TargetAccount(**body.model_dump(), added_by=current_user.id)
+    target = TargetAccount(
+        **body.model_dump(),
+        added_by=current_user.id,
+        source=TargetSource.ADMIN_PANEL,
+    )
     session.add(target)
     await session.flush()
     await session.refresh(target)

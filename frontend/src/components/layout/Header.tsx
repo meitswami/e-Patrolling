@@ -23,7 +23,7 @@ export function Header({ title, subtitle }: HeaderProps) {
 
   function handleLogout() {
     clearSession()
-    router.push('/login')
+    router.push('/admin')
   }
 
   return (

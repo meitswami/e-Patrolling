@@ -18,7 +18,7 @@ export default function OffendersPage() {
 
   useEffect(() => {
     if (!isAuthenticated()) {
-      router.replace('/login')
+      router.replace('/admin')
       return
     }
     listOffenders()

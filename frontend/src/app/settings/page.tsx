@@ -61,7 +61,7 @@ export default function SettingsPage() {
   useEffect(() => {
     setMounted(true)
     if (!isAuthenticated()) {
-      router.replace('/login')
+      router.replace('/admin')
       return
     }
     const admin = getUser()?.role === 'ADMIN'

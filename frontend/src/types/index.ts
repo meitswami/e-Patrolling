@@ -86,6 +86,10 @@ export interface AbuseExplanationItem {
   related_categories?: string[]
 }
 
+export type TargetSource = 'admin_panel' | 'website_intake'
+
+export type WebsiteRequestStatus = 'pending' | 'reviewed' | 'converted' | 'dismissed'
+
 export interface TargetAccount {
   id: string
   username: string
@@ -94,5 +98,32 @@ export interface TargetAccount {
   profile_url: string
   is_active: boolean
   monitoring_enabled: boolean
+  source?: TargetSource
+  website_request_id?: string | null
   created_at: string
+}
+
+export interface WebsiteSafetyRequest {
+  id: string
+  contact_name: string | null
+  contact_email: string | null
+  contact_phone: string | null
+  profile_entries: Array<{
+    raw?: string
+    platform: string
+    username: string
+    profile_url: string
+  }>
+  state: string
+  city: string
+  message: string | null
+  status: WebsiteRequestStatus
+  admin_notes: string | null
+  created_at: string
+  reviewed_at: string | null
+}
+
+export interface IndiaLocations {
+  states: string[]
+  cities_by_state: Record<string, string[]>
 }

@@ -89,6 +89,31 @@ class ReportStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 
+class TargetSource(str, enum.Enum):
+    ADMIN_PANEL = "admin_panel"
+    WEBSITE_INTAKE = "website_intake"
+
+
+class WebsiteRequestStatus(str, enum.Enum):
+    PENDING = "pending"
+    REVIEWED = "reviewed"
+    CONVERTED = "converted"
+    DISMISSED = "dismissed"
+
+
+_TARGET_SOURCE_PG = Enum(
+    TargetSource,
+    name="target_source",
+    values_callable=lambda members: [m.value for m in members],
+)
+
+_WEBSITE_REQUEST_STATUS_PG = Enum(
+    WebsiteRequestStatus,
+    name="website_request_status",
+    values_callable=lambda members: [m.value for m in members],
+)
+
+
 # ── Models ───────────────────────────────────────────────────────
 
 
@@ -127,10 +152,33 @@ class TargetAccount(Base):
     region_confidence: Mapped[Optional[float]] = mapped_column(Float)
     added_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    source: Mapped[TargetSource] = mapped_column(
+        _TARGET_SOURCE_PG, default=TargetSource.ADMIN_PANEL, nullable=False
+    )
+    website_request_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class WebsiteSafetyRequest(Base):
+    __tablename__ = "website_safety_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    contact_name: Mapped[Optional[str]] = mapped_column(String(255))
+    contact_email: Mapped[Optional[str]] = mapped_column(String(255))
+    contact_phone: Mapped[Optional[str]] = mapped_column(String(50))
+    profile_entries: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    state: Mapped[str] = mapped_column(String(100), nullable=False)
+    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    message: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[WebsiteRequestStatus] = mapped_column(
+        _WEBSITE_REQUEST_STATUS_PG, default=WebsiteRequestStatus.PENDING, nullable=False
+    )
+    admin_notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class AccusedProfile(Base):

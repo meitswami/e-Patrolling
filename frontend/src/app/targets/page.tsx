@@ -16,7 +16,7 @@ import {
   type RunningCrawlInfo,
 } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import type { Platform, TargetAccount } from '@/types'
+import type { Platform, TargetAccount, TargetSource } from '@/types'
 
 const PLATFORMS = ACTIVE_PATROL_PLATFORMS
 
@@ -36,12 +36,14 @@ export default function TargetsPage() {
   const [displayName, setDisplayName] = useState('')
   const [platform, setPlatform] = useState<Platform>('instagram')
   const [profileUrl, setProfileUrl] = useState('')
+  const [sourceFilter, setSourceFilter] = useState<TargetSource | 'all'>('admin_panel')
 
   const loadTargets = useCallback(async () => {
-    const data = await listTargets(1, 50)
+    const source = sourceFilter === 'all' ? undefined : sourceFilter
+    const data = await listTargets(1, 50, source)
     setItems(data.items)
     setTotal(data.total)
-  }, [])
+  }, [sourceFilter])
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -54,7 +56,7 @@ export default function TargetsPage() {
 
   useEffect(() => {
     if (!isAuthenticated()) {
-      router.replace('/login')
+      router.replace('/admin')
       return
     }
 
@@ -168,6 +170,35 @@ export default function TargetsPage() {
       title="Target Accounts"
       subtitle={`${monitoringCount} of ${total} account(s) actively monitored`}
     >
+      <div className="mb-4 flex flex-wrap gap-2">
+        {(
+          [
+            ['admin_panel', 'Admin panel targets'],
+            ['website_intake', 'From website intake'],
+            ['all', 'All targets'],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setSourceFilter(value)}
+            className={`rounded-lg border px-3 py-1.5 text-sm ${
+              sourceFilter === value
+                ? 'border-patrol-accent/50 bg-patrol-accent/10 text-patrol-accent'
+                : 'border-patrol-border text-patrol-muted hover:text-patrol-text'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <Link
+          href="/website-requests"
+          className="ml-auto rounded-lg border border-sky-500/40 px-3 py-1.5 text-sm text-sky-300 hover:bg-sky-500/10"
+        >
+          Website requests →
+        </Link>
+      </div>
+
       <p className="mb-4 text-xs text-patrol-muted">
         <strong className="text-patrol-text">Run crawl</strong> checks recent activity on the profile.
         <strong className="ml-2 text-patrol-text">Crawl history</strong> scrolls older posts and reads
@@ -311,6 +342,11 @@ export default function TargetsPage() {
                 >
                   {running ? 'Crawling…' : active ? 'Monitoring' : 'Paused'}
                 </span>
+                {item.source === 'website_intake' && (
+                  <span className="rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-300">
+                    Website intake
+                  </span>
+                )}
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <a

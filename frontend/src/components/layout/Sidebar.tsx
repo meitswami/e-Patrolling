@@ -12,6 +12,7 @@ import {
   BarChart3,
   FileDown,
   Settings,
+  Globe,
   type LucideIcon,
 } from 'lucide-react'
 import { NAV_ITEMS } from '@/lib/constants'
@@ -26,6 +27,7 @@ const ICONS: Record<string, LucideIcon> = {
   BarChart3,
   FileDown,
   Settings,
+  Globe,
 }
 
 export function Sidebar() {

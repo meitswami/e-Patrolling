@@ -1,4 +1,4 @@
-import { API_BASE_URL, buildApiUrl } from '@/lib/constants'
+import { API_BASE_URL, API_PREFIX, buildApiUrl } from '@/lib/constants'
 import { getToken, clearSession } from '@/lib/auth'
 import type {
   AbuseExplanationItem,
@@ -9,8 +9,11 @@ import type {
   PaginatedResponse,
   Platform,
   TargetAccount,
+  TargetSource,
   TokenResponse,
   User,
+  WebsiteSafetyRequest,
+  IndiaLocations,
 } from '@/types'
 
 /** Turn FastAPI error JSON into a readable string. */
@@ -79,7 +82,7 @@ async function request<T>(
   if (res.status === 401 && auth) {
     clearSession()
     if (typeof window !== 'undefined') {
-      window.location.href = '/login'
+      window.location.href = '/admin'
     }
   }
 
@@ -171,10 +174,71 @@ export async function deleteEvidence(evidenceId: string): Promise<void> {
 export async function listTargets(
   page = 1,
   pageSize = 50,
+  source?: TargetSource,
 ): Promise<PaginatedResponse<TargetAccount>> {
-  return request<PaginatedResponse<TargetAccount>>(
-    `/targets?page=${page}&page_size=${pageSize}`,
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  if (source) params.set('source', source)
+  return request<PaginatedResponse<TargetAccount>>(`/targets?${params}`, {}, true)
+}
+
+export async function getIndiaLocations(): Promise<IndiaLocations> {
+  return request<IndiaLocations>('/public/locations/india')
+}
+
+export interface SubmitSafetyRequestPayload {
+  profile_entries: { value: string }[]
+  state: string
+  city: string
+  contact_name?: string
+  contact_email?: string
+  contact_phone?: string
+  message?: string
+}
+
+export async function submitSafetyRequest(
+  body: SubmitSafetyRequestPayload,
+): Promise<WebsiteSafetyRequest> {
+  return request<WebsiteSafetyRequest>('/public/safety-request', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function listWebsiteRequests(
+  page = 1,
+  pageSize = 20,
+  status?: string,
+): Promise<PaginatedResponse<WebsiteSafetyRequest>> {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  if (status) params.set('status', status)
+  return request<PaginatedResponse<WebsiteSafetyRequest>>(
+    `/website-requests?${params}`,
     {},
+    true,
+  )
+}
+
+export async function convertWebsiteRequest(requestId: string): Promise<TargetAccount[]> {
+  return request<TargetAccount[]>(
+    `/website-requests/${requestId}/convert`,
+    { method: 'POST' },
+    true,
+  )
+}
+
+export async function updateWebsiteRequest(
+  requestId: string,
+  body: { status?: string; admin_notes?: string },
+): Promise<WebsiteSafetyRequest> {
+  return request<WebsiteSafetyRequest>(
+    `/website-requests/${requestId}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
     true,
   )
 }
