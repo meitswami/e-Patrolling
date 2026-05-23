@@ -34,6 +34,26 @@ async def login(
                 "Check EC2 outbound internet and DATABASE_URL in .env."
             ),
         ) from exc
+    except Exception as exc:
+        err = str(exc).lower()
+        if "tenant" in err and "not found" in err:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Supabase pooler rejected the connection (tenant/user not found). "
+                    "Copy the Session pooler URI exactly from Supabase Dashboard → Connect "
+                    "(host may be aws-1-REGION.pooler.supabase.com, not aws-0)."
+                ),
+            ) from exc
+        if "name or service not known" in err or "getaddrinfo" in err:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Database hostname could not be resolved. "
+                    "Check DATABASE_URL pooler host matches Supabase Dashboard → Connect."
+                ),
+            ) from exc
+        raise
     user = result.scalar_one_or_none()
 
     if user is None or not verify_password(body.password, user.password_hash):

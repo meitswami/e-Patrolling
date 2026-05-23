@@ -78,13 +78,19 @@ jobs:
               exit 1
             fi
 
+            chmod +x scripts/start-backend.sh scripts/ec2-check.sh
+            mkdir -p storage/logs
+
             pm2 delete backend 2>/dev/null || true
             pm2 start ecosystem.config.cjs
             pm2 save
 
-            sleep 3
-            echo "=== Health (local) ==="
-            curl -sf http://127.0.0.1:5000/health || (echo "Backend not responding on :5000" && pm2 logs backend --lines 30 --nostream && exit 1)
+            sleep 5
+            echo "=== EC2 check ==="
+            bash scripts/ec2-check.sh
+
+            echo "=== Health (must pass) ==="
+            curl -sf http://127.0.0.1:5000/health || (echo "Backend not responding on :5000" && pm2 logs backend --lines 40 --nostream && exit 1)
 
             echo "=== CORS preflight (local) ==="
             curl -sf -X OPTIONS "http://127.0.0.1:5000/api/v1/auth/login" \

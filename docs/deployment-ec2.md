@@ -5,8 +5,10 @@
 | Symptom | Likely cause |
 |--------|----------------|
 | `[Errno 101] Network is unreachable` on login | **`db.*.supabase.co` is IPv6-only**; most EC2 VPCs have no IPv6 egress. Use **Session pooler** URI (IPv4), not direct `db.` host |
-| `nc -4` → *No address associated with hostname* | Normal for direct host — there is **no IPv4 A record**. Switch to `aws-0-REGION.pooler.supabase.com` |
+| `nc -4` → *No address associated with hostname* | Normal for direct `db.` host — no IPv4. Use pooler host **from dashboard** (may be `aws-1-REGION`, not `aws-0`) |
+| `Tenant or user not found` | Pooler hostname wrong for your project — copy **exact** Session pooler host from Dashboard → Connect |
 | Browser CORS error on `epatrol-api.duckdns.org` | `ALLOWED_ORIGINS` missing Vercel URL, or API returns 502/500 without reaching FastAPI |
+| **502 Bad Gateway** on login | nginx OK but **nothing on port 5000** — PM2/uvicorn crashed; run `bash scripts/ec2-check.sh` and `pm2 logs backend` |
 | "Cannot reach API" on login page | Reverse proxy not running, wrong port, or security group blocks 443 |
 
 ## 1. Create `.env` on EC2 (required)
@@ -37,18 +39,19 @@ Supabase **direct** host `db.<project>.supabase.co` resolves to **IPv6 only**. T
 3. Change the prefix to `postgresql+asyncpg://`
 4. Username is **`postgres.whzmtzatkxgiomwlwkgy`** (not plain `postgres`)
 
-Example (replace `REGION` with yours from the dashboard, e.g. `ap-south-1`):
+Example (replace host + password from dashboard — **do not guess** `aws-0` vs `aws-1`):
 
 ```env
-DATABASE_URL=postgresql+asyncpg://postgres.whzmtzatkxgiomwlwkgy:YOUR_PASSWORD@aws-0-ap-south-1.pooler.supabase.com:5432/postgres
+DATABASE_URL=postgresql+asyncpg://postgres.whzmtzatkxgiomwlwkgy:YOUR_PASSWORD@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
 DATABASE_SSL=true
+DATABASE_FORCE_IPV4=false
 ENVIRONMENT=production
 ```
 
-Test from EC2 (pooler has IPv4):
+Test from EC2 (use **your** pooler host from the dashboard):
 
 ```bash
-nc -4 -zv aws-0-ap-south-1.pooler.supabase.com 5432
+nc -4 -zv aws-1-ap-south-1.pooler.supabase.com 5432
 curl -s http://127.0.0.1:5000/health
 ```
 
@@ -120,12 +123,17 @@ Open EC2 security group: **443** (and **80** for Let's Encrypt).
 
 ```bash
 cd ~/e-Patrolling
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+chmod +x scripts/start-backend.sh scripts/ec2-check.sh
+pm2 delete backend 2>/dev/null || true
 pm2 start ecosystem.config.cjs
 pm2 save
-pm2 logs backend
+bash scripts/ec2-check.sh
 ```
+
+If `ec2-check` shows *nothing listening on 5000*, read `pm2 logs backend` — often missing `.venv/bin/uvicorn` (old deploy used `venv/` only).
 
 **Common deploy mistake:** using `venv` instead of `.venv`, or wrong uvicorn path — the API never starts and the browser shows a CORS error (nginx 502 has no CORS headers).
 

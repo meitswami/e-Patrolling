@@ -36,6 +36,9 @@ def _resolve_database_url_ipv4(database_url: str) -> str:
         return database_url
 
     host = parsed.host
+    # Supavisor pooler already has IPv4; do not rewrite host (breaks SNI/tenant routing).
+    if host and "pooler.supabase.com" in host:
+        return database_url
     if not host or host in ("localhost", "127.0.0.1"):
         return database_url
     try:
