@@ -32,4 +32,4 @@ jobs:
 
             pip install -r requirements.txt
 
-            pm2 restart backend || pm2 start ".venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 5000" --name backend
+            pm2 restart backend || pm2 start "cd ~/e-Patrolling/backend && ../venv/bin/uvicorn main:app --host 0.0.0.0 --port 5000" --name backend
