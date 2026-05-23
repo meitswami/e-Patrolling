@@ -1,8 +1,12 @@
 # ============================================================
-# PATROL — Optional ML models (large download)
+# PATROL — Optional ML models (GPU / CUDA build — LARGE)
 # Install ONLY when USE_ML_CLASSIFIER=true or USE_INDICBERT=true
 # ============================================================
-# pip install -r requirements-ml.txt
+# EC2 without GPU: use requirements-ml-cpu.txt instead (~3x smaller).
+#   pip install -r requirements-ml-cpu.txt
+#
+# GPU server with CUDA drivers:
+#   pip install -r requirements-ml.txt
 #
 # Python 3.14: torch 2.9+ required (2.2.x is not published for 3.14)
 

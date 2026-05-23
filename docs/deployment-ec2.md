@@ -156,7 +156,43 @@ Set in Vercel project → Environment variables:
 
 Redeploy after changing.
 
-## 7. Seed admin user (once DB works)
+## 7. Local ML on EC2 (CPU)
+
+Default EC2 instances have **no GPU**. Do **not** use `requirements-ml.txt` there — pip pulls a **500MB+ CUDA torch** bundle and often fails with `Disk quota exceeded`.
+
+```bash
+cd ~/e-Patrolling
+source .venv/bin/activate
+
+# Free space if a failed install left partial downloads
+pip cache purge
+rm -rf ~/.cache/pip
+du -sh .venv ~/e-Patrolling/ai_models 2>/dev/null
+
+# CPU-only torch (~150–250 MB) + transformers
+pip install -r requirements-ml-cpu.txt
+
+pm2 restart backend
+```
+
+Enable in **Settings → Save AI settings** (Local ML on). Models download on first classification into `~/e-Patrolling/ai_models/cache/` from Hugging Face Hub.
+
+Optional in `.env` (fallback if DB flag unset):
+
+```env
+USE_GPU=false
+HUGGINGFACE_API_TOKEN=hf_...   # only for HF Inference API toggle
+```
+
+Check logs after a crawl:
+
+```bash
+pm2 logs backend --lines 80 | grep -iE 'toxicity|ML model|quota|disk'
+```
+
+If disk is still tight: `df -h`, remove old logs under `storage/logs/`, or resize the EBS volume.
+
+## 8. Seed admin user (once DB works)
 
 ```bash
 cd ~/e-Patrolling

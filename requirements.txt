@@ -11,8 +11,9 @@
 #   pip install -r requirements.txt
 #   python -m playwright install chromium
 #
-# Optional ML (USE_ML_CLASSIFIER / USE_INDICBERT in .env):
-#   pip install -r requirements-ml.txt
+# Optional ML (Settings → Local ML, or USE_ML_CLASSIFIER in .env):
+#   EC2 CPU:  pip install -r requirements-ml-cpu.txt
+#   GPU box:  pip install -r requirements-ml.txt
 
 # ── Web Framework ─────────────────────────────────────────
 fastapi>=0.115.0

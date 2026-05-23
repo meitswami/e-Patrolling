@@ -1,0 +1,13 @@
+# ============================================================
+# PATROL — ML deps for CPU-only servers (EC2 without GPU)
+# ~150–250 MB torch wheel — NOT the 500MB+ CUDA build
+# ============================================================
+#   source .venv/bin/activate
+#   pip install -r requirements-ml-cpu.txt
+#
+# Use requirements-ml.txt only on a GPU machine with CUDA drivers.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.9.0
+transformers>=4.37.2
+sentence-transformers>=2.3.1
