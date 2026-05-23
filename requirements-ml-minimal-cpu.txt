@@ -1,0 +1,13 @@
+# ============================================================
+# PATROL — Minimal Local ML for small EC2 disks (~6–8 GB root)
+# Toxicity classifier only (model_loader.py) — no sentence-transformers
+# ============================================================
+#   mkdir -p ~/e-Patrolling/.pip-tmp
+#   export TMPDIR=~/e-Patrolling/.pip-tmp
+#   pip install --no-cache-dir -r requirements-ml-minimal-cpu.txt
+#
+# Saves ~300MB vs requirements-ml-cpu.txt (no scipy/sklearn stack).
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.9.0
+transformers>=4.37.2

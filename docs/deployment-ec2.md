@@ -169,11 +169,31 @@ pip cache purge
 rm -rf ~/.cache/pip
 du -sh .venv ~/e-Patrolling/ai_models 2>/dev/null
 
-# CPU-only torch (~150–250 MB) + transformers
-pip install -r requirements-ml-cpu.txt
+# Small disk (≤8 GB root): minimal install + pip temp on home volume
+mkdir -p ~/e-Patrolling/.pip-tmp
+export TMPDIR=~/e-Patrolling/.pip-tmp
+pip install --no-cache-dir -r requirements-ml-minimal-cpu.txt
+
+# More headroom (≥12 GB free): full CPU stack
+# pip install --no-cache-dir -r requirements-ml-cpu.txt
 
 pm2 restart backend
 ```
+
+If install fails with `Disk quota exceeded` while `df -h /` shows free space, **`/tmp` is often too small** — always set `TMPDIR` as above. Also check inodes: `df -i /`.
+
+Free space before install:
+
+```bash
+pip cache purge
+sudo apt-get clean
+sudo journalctl --vacuum-time=3d 2>/dev/null || true
+du -sh ~/.cache/ms-playwright ~/e-Patrolling/.venv ~/e-Patrolling/storage/logs 2>/dev/null
+# Playwright browsers are often 500MB–1GB+ if not needed on this host:
+# rm -rf ~/.cache/ms-playwright
+```
+
+**No local torch at all:** enable **HF Inference API** in Settings and set `HUGGINGFACE_API_TOKEN` in `.env` (calls Hugging Face cloud; no model download on EC2).
 
 Enable in **Settings → Save AI settings** (Local ML on). Models download on first classification into `~/e-Patrolling/ai_models/cache/` from Hugging Face Hub.
 
