@@ -4,18 +4,26 @@
 
 | Symptom | Likely cause |
 |--------|----------------|
-| `[Errno 101] Network is unreachable` on login | EC2 cannot reach Supabase (no internet route / wrong `.env`) |
+| `[Errno 101] Network is unreachable` on login | EC2 tries **IPv6** to Supabase (no IPv6 egress); HTTPS works but port 5432 on AAAA fails — set `DATABASE_FORCE_IPV4=true` (default) or test `nc -4 -zv db....supabase.co 5432` |
 | Browser CORS error on `epatrol-api.duckdns.org` | `ALLOWED_ORIGINS` missing Vercel URL, or API returns 502/500 without reaching FastAPI |
 | "Cannot reach API" on login page | Reverse proxy not running, wrong port, or security group blocks 443 |
 
-## 1. Use the correct `.env` file
+## 1. Create `.env` on EC2 (required)
+
+`.env` is **not** in git. If `grep .env` says *No such file*, the API has no database URL, JWT secret, or CORS config.
+
+```bash
+cd ~/e-Patrolling
+bash scripts/setup-ec2-env.sh
+nano .env   # set DATABASE_URL and JWT_SECRET_KEY (see below)
+```
 
 Settings loads **both** (backend overrides root):
 
-1. `~/e-Patrolling/.env`
+1. `~/e-Patrolling/.env` ← **use this on EC2**
 2. `~/e-Patrolling/backend/.env`
 
-Put production secrets in **one** of these; if you only maintain `backend/.env`, that is now supported.
+Copy values from your **local** machine’s working `.env` (same Supabase project), or from Supabase Dashboard → Database → connection string (add `+asyncpg` after `postgresql`).
 
 ## 2. DATABASE_URL on EC2
 
@@ -31,11 +39,14 @@ If you use the **pooler** URI from the Supabase dashboard, use the full hostname
 Test from EC2:
 
 ```bash
-curl -sI https://whzmtzatkxgiomwlwkgy.supabase.co | head -1
-nc -zv db.whzmtzatkxgiomwlwkgy.supabase.co 5432
+curl -sI https://supabase.com | head -1
+nc -4 -zv db.whzmtzatkxgiomwlwkgy.supabase.co 5432   # MUST use -4 on many EC2 VPCs
+nc -zv db.whzmtzatkxgiomwlwkgy.supabase.co 5432      # may try IPv6 and fail with errno 101
 ```
 
-If `nc` fails with "Network is unreachable", fix VPC routing first:
+If `nc -4` works but `nc` without `-4` fails → IPv6 routing issue (common). The app uses `DATABASE_FORCE_IPV4=true` to connect via IPv4 only.
+
+If both fail with "Network is unreachable", fix VPC routing first:
 
 - Public subnet + Internet Gateway, **or**
 - Private subnet + NAT Gateway

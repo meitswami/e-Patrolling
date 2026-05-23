@@ -34,16 +34,48 @@ jobs:
             pip install -U pip -q
             pip install -r requirements.txt -q
 
-            # Production CORS — idempotent (does not duplicate if already set)
-            if [ -f .env ] && ! grep -q '^ALLOWED_ORIGINS=.*e-patrolling.vercel.app' .env; then
+            # Bootstrap .env (never committed — must exist on EC2)
+            if [ ! -f .env ]; then
+              cp .env.example .env
+              sed -i 's/^ENVIRONMENT=development/ENVIRONMENT=production/' .env
+              sed -i 's/^CRAWLER_DEMO_MODE=true/CRAWLER_DEMO_MODE=false/' .env
+              echo "Created .env from .env.example — set DATABASE_URL and JWT_SECRET_KEY on the server if deploy used placeholders."
+            fi
+            if ! grep -q '^ALLOWED_ORIGINS=.*e-patrolling.vercel.app' .env; then
               if grep -q '^ALLOWED_ORIGINS=' .env; then
                 sed -i 's|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=https://e-patrolling.vercel.app,http://localhost:3000|' .env
               else
                 echo 'ALLOWED_ORIGINS=https://e-patrolling.vercel.app,http://localhost:3000' >> .env
               fi
             fi
-            if [ -f .env ] && ! grep -q '^ENVIRONMENT=' .env; then
+            if grep -q '^ENVIRONMENT=development' .env; then
+              sed -i 's/^ENVIRONMENT=development/ENVIRONMENT=production/' .env
+            fi
+            if ! grep -q '^ENVIRONMENT=' .env; then
               echo 'ENVIRONMENT=production' >> .env
+            fi
+
+            # Optional GitHub repo secrets (Settings → Secrets → Actions)
+            if [ -n "${{ secrets.EC2_DATABASE_URL }}" ]; then
+              if grep -q '^DATABASE_URL=' .env; then
+                sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${{ secrets.EC2_DATABASE_URL }}|" .env
+              else
+                echo "DATABASE_URL=${{ secrets.EC2_DATABASE_URL }}" >> .env
+              fi
+            fi
+            if [ -n "${{ secrets.EC2_JWT_SECRET }}" ]; then
+              if grep -q '^JWT_SECRET_KEY=' .env; then
+                sed -i "s|^JWT_SECRET_KEY=.*|JWT_SECRET_KEY=${{ secrets.EC2_JWT_SECRET }}|" .env
+              else
+                echo "JWT_SECRET_KEY=${{ secrets.EC2_JWT_SECRET }}" >> .env
+              fi
+            fi
+
+            if grep -q 'YOUR-PASSWORD\|change_this' .env; then
+              echo "ERROR: .env still has placeholder DATABASE_URL or JWT_SECRET_KEY."
+              echo "On EC2 run: nano ~/e-Patrolling/.env"
+              echo "Or add GitHub secrets: EC2_DATABASE_URL, EC2_JWT_SECRET"
+              exit 1
             fi
 
             pm2 delete backend 2>/dev/null || true
