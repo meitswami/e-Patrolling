@@ -100,6 +100,14 @@ class Settings(BaseSettings):
         "http://localhost:80",
         "http://127.0.0.1:3000",
     ]
+    # Also allow Vercel preview/production URLs (*.vercel.app) when set (recommended for EC2).
+    CORS_ORIGIN_REGEX: Optional[str] = r"https://([a-z0-9-]+\.)*vercel\.app"
+    # Merged into CORS middleware — ensures production frontend works even if .env omits ALLOWED_ORIGINS.
+    CORS_EXTRA_ORIGINS: Annotated[
+        List[str],
+        NoDecode,
+        BeforeValidator(_parse_allowed_origins),
+    ] = ["https://e-patrolling.vercel.app"]
 
     # ── AI Models ─────────────────────────────────────────────
     MODEL_CACHE_DIR: Path = _PROJECT_ROOT / "ai_models" / "cache"
@@ -205,6 +213,16 @@ class Settings(BaseSettings):
             or "supabase.co" in self.DATABASE_URL
             or "supabase.com" in self.DATABASE_URL
         )
+
+    @property
+    def effective_cors_origins(self) -> List[str]:
+        """ALLOWED_ORIGINS + CORS_EXTRA_ORIGINS (deduped)."""
+        merged: List[str] = []
+        for origin in [*self.ALLOWED_ORIGINS, *self.CORS_EXTRA_ORIGINS]:
+            o = origin.strip()
+            if o and o not in merged:
+                merged.append(o)
+        return merged
 
     @property
     def database_url_direct(self) -> str:

@@ -163,12 +163,20 @@ app = FastAPI(
 
 # ── Middleware ───────────────────────────────────────────────
 
+_cors_regex = settings.CORS_ORIGIN_REGEX if settings.ENVIRONMENT == "production" else None
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=settings.effective_cors_origins,
+    allow_origin_regex=_cors_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+)
+logger.info(
+    "CORS: origins=%s regex=%s",
+    settings.effective_cors_origins,
+    _cors_regex or "(disabled)",
 )
 
 
@@ -205,7 +213,8 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "database": db_status,
         "redis": "connected" if is_redis_available() else "disabled",
-        "cors_origins": settings.ALLOWED_ORIGINS,
+        "cors_origins": settings.effective_cors_origins,
+        "cors_origin_regex": _cors_regex,
     }
 
 

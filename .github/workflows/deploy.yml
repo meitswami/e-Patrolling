@@ -11,25 +11,54 @@ jobs:
 
     steps:
       - name: Deploy to EC2
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.2.0
 
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
+          script_stop: true
 
           script: |
+            set -e
             cd ~/e-Patrolling
 
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
 
             if [ ! -d ".venv" ]; then
               python3 -m venv .venv
             fi
-
             source .venv/bin/activate
+            pip install -U pip -q
+            pip install -r requirements.txt -q
 
-            pip install -r requirements.txt
+            # Production CORS — idempotent (does not duplicate if already set)
+            if [ -f .env ] && ! grep -q '^ALLOWED_ORIGINS=.*e-patrolling.vercel.app' .env; then
+              if grep -q '^ALLOWED_ORIGINS=' .env; then
+                sed -i 's|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=https://e-patrolling.vercel.app,http://localhost:3000|' .env
+              else
+                echo 'ALLOWED_ORIGINS=https://e-patrolling.vercel.app,http://localhost:3000' >> .env
+              fi
+            fi
+            if [ -f .env ] && ! grep -q '^ENVIRONMENT=' .env; then
+              echo 'ENVIRONMENT=production' >> .env
+            fi
 
-            pm2 restart backend || pm2 start "cd ~/e-Patrolling/backend && ../venv/bin/uvicorn main:app --host 0.0.0.0 --port 5000" --name backend
+            pm2 delete backend 2>/dev/null || true
+            pm2 start ecosystem.config.cjs
+            pm2 save
+
+            sleep 3
+            echo "=== Health (local) ==="
+            curl -sf http://127.0.0.1:5000/health || (echo "Backend not responding on :5000" && pm2 logs backend --lines 30 --nostream && exit 1)
+
+            echo "=== CORS preflight (local) ==="
+            curl -sf -X OPTIONS "http://127.0.0.1:5000/api/v1/auth/login" \
+              -H "Origin: https://e-patrolling.vercel.app" \
+              -H "Access-Control-Request-Method: POST" \
+              -H "Access-Control-Request-Headers: content-type,authorization" \
+              -D - -o /dev/null | grep -i access-control || echo "WARN: no CORS headers on OPTIONS"
+
+            echo "Deploy finished OK"

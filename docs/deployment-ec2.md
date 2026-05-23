@@ -43,14 +43,35 @@ If `nc` fails with "Network is unreachable", fix VPC routing first:
 
 ## 3. CORS for Vercel
 
-In `.env` on the server:
+In `~/e-Patrolling/.env` (or `backend/.env`):
 
 ```env
 ENVIRONMENT=production
 ALLOWED_ORIGINS=https://e-patrolling.vercel.app,http://localhost:3000
 ```
 
-Restart uvicorn after changing env vars.
+The app also merges `CORS_EXTRA_ORIGINS` (includes `https://e-patrolling.vercel.app`) and, when `ENVIRONMENT=production`, allows `https://*.vercel.app` via regex.
+
+**GitHub Actions deploy** (`ecosystem.config.cjs` + updated workflow) sets PM2 correctly and patches `.env` if `ALLOWED_ORIGINS` is missing.
+
+Restart after manual env changes:
+
+```bash
+cd ~/e-Patrolling && pm2 restart backend
+```
+
+Verify CORS from the server:
+
+```bash
+curl -s -D - -o /dev/null -X OPTIONS "http://127.0.0.1:5000/api/v1/auth/login" \
+  -H "Origin: https://e-patrolling.vercel.app" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: content-type"
+```
+
+You must see `access-control-allow-origin: https://e-patrolling.vercel.app`.
+
+If OPTIONS works on `:5000` but the browser still fails on `https://epatrol-api.duckdns.org`, nginx is not proxying OPTIONS to uvicorn (see `deploy/nginx-patrol-api.conf`).
 
 ## 4. Expose the API (DuckDNS + HTTPS)
 
@@ -71,14 +92,18 @@ server {
 
 Open EC2 security group: **443** (and **80** for Let's Encrypt).
 
-## 5. Run as a service
+## 5. Run as a service (PM2)
 
 ```bash
 cd ~/e-Patrolling
-source venv/bin/activate
-cd backend
-uvicorn main:app --host 0.0.0.0 --port 5000
+source .venv/bin/activate
+pip install -r requirements.txt
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 logs backend
 ```
+
+**Common deploy mistake:** using `venv` instead of `.venv`, or wrong uvicorn path — the API never starts and the browser shows a CORS error (nginx 502 has no CORS headers).
 
 Verify:
 
