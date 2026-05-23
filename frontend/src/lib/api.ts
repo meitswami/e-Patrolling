@@ -1,6 +1,7 @@
-import { API_BASE_URL, API_PREFIX } from '@/lib/constants'
+import { API_BASE_URL, buildApiUrl } from '@/lib/constants'
 import { getToken, clearSession } from '@/lib/auth'
 import type {
+  AbuseExplanationItem,
   DashboardStats,
   EvidenceListItem,
   HealthResponse,
@@ -18,7 +19,11 @@ export function parseApiError(body: unknown, fallback: string): string {
   const record = body as Record<string, unknown>
 
   if (typeof record.detail === 'string') return record.detail
-  if (typeof record.error === 'string') return record.error
+  if (typeof record.error === 'string') {
+    const pathHint =
+      typeof record.path === 'string' ? ` (${record.path})` : ''
+    return `${record.error}${pathHint}`
+  }
 
   if (Array.isArray(record.detail)) {
     const parts = record.detail.map((item) => {
@@ -61,7 +66,7 @@ async function request<T>(
 
   let res: Response
   try {
-    res = await fetch(`${API_BASE_URL}${API_PREFIX}${path}`, {
+    res = await fetch(buildApiUrl(path), {
       ...options,
       headers,
     })
@@ -191,6 +196,24 @@ export async function createTarget(body: CreateTargetPayload): Promise<TargetAcc
   )
 }
 
+export interface UpdateTargetPayload {
+  monitoring_enabled?: boolean
+  is_active?: boolean
+  display_name?: string
+  notes?: string
+}
+
+export async function updateTarget(
+  targetId: string,
+  body: UpdateTargetPayload,
+): Promise<TargetAccount> {
+  return request<TargetAccount>(
+    `/targets/${targetId}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+    true,
+  )
+}
+
 export interface PlatformPatrolInfo {
   id: string
   label: string
@@ -200,13 +223,23 @@ export interface PlatformPatrolInfo {
   monitoring_count: number
 }
 
+export interface RunningCrawlInfo {
+  target_id: string
+  target_username: string
+  platform: string
+  started_at: string
+  mode: string
+}
+
 export interface CrawlerStatus {
   supported_platforms: string[]
   platforms: PlatformPatrolInfo[]
   redis_enabled: boolean
   scheduler_enabled: boolean
   crawl_interval_seconds: number
-  demo_mode: boolean
+  mode: string
+  instagram_credentials_configured?: boolean
+  running_targets?: RunningCrawlInfo[]
   scheduler_is_running?: boolean
   scheduler_last_run_at?: string | null
   scheduler_last_run_status?: string | null
@@ -221,6 +254,7 @@ export interface CrawlerStatus {
 export interface CrawlLogItem {
   id: string
   target_id: string | null
+  target_username?: string | null
   platform: string
   comments_found: number
   comments_new: number
@@ -237,19 +271,77 @@ export interface CrawlResultSummary {
   target_id: string
   target_username?: string
   platform?: string
+  log_id?: string
+  historical?: boolean
+  posts_crawled?: number
   success: boolean
   comments_new: number
   abusive_detected: number
   critical_detected?: number
+  evidence_ids?: string[]
   error?: string
+}
+
+export interface CrawlLogEvidenceItem {
+  evidence_id: string
+  uuid: string
+  accused_username: string | null
+  severity: string
+  risk_score: number
+  comment_preview: string
+  screenshot_path: string | null
+  abuse_categories: string[]
+  is_abusive: boolean
+  is_lexicon_match: boolean
+  abuse_explanations: AbuseExplanationItem[]
+}
+
+export interface EvidenceBackfillResult {
+  total: number
+  updated: number
+  message: string
+}
+
+export async function backfillEvidenceCategories(): Promise<EvidenceBackfillResult> {
+  return request<EvidenceBackfillResult>(
+    '/evidence/backfill-categories',
+    { method: 'POST' },
+    true,
+  )
+}
+
+export interface CrawlLogResults {
+  log_id: string
+  target_id: string | null
+  target_username: string | null
+  platform: string
+  success: boolean
+  comments_new: number
+  abusive_detected: number
+  started_at: string
+  completed_at: string | null
+  evidence: CrawlLogEvidenceItem[]
 }
 
 export async function getCrawlerStatus(): Promise<CrawlerStatus> {
   return request<CrawlerStatus>('/crawlers/status', {}, true)
 }
 
+export async function clearCrawlErrorLogs(allFailed = false): Promise<{ removed: number; message: string }> {
+  const q = allFailed ? '?all_failed=true' : ''
+  return request<{ removed: number; message: string }>(
+    `/crawlers/logs/clear-errors${q}`,
+    { method: 'POST' },
+    true,
+  )
+}
+
 export async function listCrawlLogs(limit = 20): Promise<CrawlLogItem[]> {
   return request<CrawlLogItem[]>(`/crawlers/logs?limit=${limit}`, {}, true)
+}
+
+export async function getCrawlLogResults(logId: string): Promise<CrawlLogResults> {
+  return request<CrawlLogResults>(`/crawlers/logs/${logId}/results`, {}, true)
 }
 
 export async function runCrawlAll(): Promise<CrawlResultSummary[]> {
@@ -262,6 +354,15 @@ export async function stopCrawlAll(): Promise<{ status: string; message: string 
 
 export async function runCrawlTarget(targetId: string): Promise<CrawlResultSummary> {
   return request<CrawlResultSummary>(`/crawlers/run/${targetId}`, { method: 'POST' }, true)
+}
+
+/** Scroll older posts and crawl comments on each (Instagram). */
+export async function runHistoricalCrawl(targetId: string): Promise<CrawlResultSummary> {
+  return request<CrawlResultSummary>(
+    `/crawlers/run/${targetId}/historical`,
+    { method: 'POST' },
+    true,
+  )
 }
 
 export interface OffenderListItem {
@@ -364,6 +465,10 @@ export interface AccusedDossier {
     risk_score: number
     target_username: string | null
     comment_text: string
+    abuse_categories?: string[]
+    abuse_explanations?: AbuseExplanationItem[]
+    is_abusive?: boolean
+    is_lexicon_match?: boolean
     comment_posted_at: string | null
     evidence_captured_at: string | null
     post_url: string | null
@@ -474,8 +579,18 @@ export interface AiStatus {
   abuse_threshold: number
 }
 
+export interface InstagramValidationResult {
+  success: boolean
+  message: string
+  username: string | null
+}
+
 export interface CrawlerSettings {
   crawler_demo_mode: boolean
+  mode?: string
+  instagram_session_connected?: boolean
+  instagram_auth_configured?: boolean
+  instagram_credentials_configured?: boolean
   instagram_username: string
   instagram_password_set: boolean
   instagram_password_configured_in_db: boolean
@@ -511,6 +626,51 @@ export async function updateCrawlerSettings(
   return request<CrawlerSettings>(
     '/settings/crawler',
     { method: 'PUT', body: JSON.stringify(body) },
+    true,
+  )
+}
+
+export async function validateInstagramCredentials(): Promise<InstagramValidationResult> {
+  return request<InstagramValidationResult>(
+    '/settings/crawler/verify-instagram-session',
+    { method: 'POST' },
+    true,
+  )
+}
+
+/** Opens a browser on the server; user logs in on instagram.com (up to 5 min). */
+export async function connectInstagramSession(): Promise<InstagramValidationResult> {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' }
+  const token = getToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 360000)
+  try {
+    const res = await fetch(buildApiUrl('/settings/crawler/connect-instagram'), {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(parseApiError(body, 'Instagram connect failed'))
+    }
+    return body as InstagramValidationResult
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Connect timed out after 6 minutes. Try again and finish login in the browser.')
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export async function disconnectInstagramSession(): Promise<InstagramValidationResult> {
+  return request<InstagramValidationResult>(
+    '/settings/crawler/disconnect-instagram',
+    { method: 'POST' },
     true,
   )
 }

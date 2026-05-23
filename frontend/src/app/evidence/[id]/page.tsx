@@ -5,6 +5,9 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { PlatformLabel } from '@/components/platforms/PlatformLabel'
+import { AbuseCategoryBadges, abuseCategoriesSummary } from '@/components/abuse/AbuseCategoryBadges'
+import { AbuseExplanationPanel } from '@/components/abuse/AbuseExplanationPanel'
+import { AbusiveCommentText } from '@/components/abuse/AbusiveCommentText'
 import { API_BASE_URL, SEVERITY_CONFIG } from '@/lib/constants'
 import {
   deleteEvidence,
@@ -104,6 +107,7 @@ export default function EvidenceDetailPage() {
         <article className="rounded-xl border border-patrol-border bg-patrol-card p-6">
           <div className="flex flex-wrap gap-2 text-xs">
             <span className="font-mono text-lg text-patrol-accent">{item.evidence_id}</span>
+            <AbuseCategoryBadges categories={item.abuse_categories ?? []} />
             <span className={`rounded border px-2 py-0.5 ${sev.className}`}>{sev.label}</span>
             {item.is_escalated && (
               <span className="rounded border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-red-400">
@@ -130,9 +134,23 @@ export default function EvidenceDetailPage() {
             </a>
           )}
 
-          <p className="mt-4 text-sm leading-relaxed text-patrol-text">{item.comment_text}</p>
+          <AbusiveCommentText
+            className="mt-4"
+            text={item.comment_text}
+            abusive={item.is_abusive}
+            lexiconMatch={item.is_lexicon_match}
+          />
+          <AbuseExplanationPanel explanations={item.abuse_explanations ?? []} />
 
           <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
+            {(item.abuse_categories?.length ?? 0) > 0 && (
+              <div className="sm:col-span-2">
+                <dt className="text-patrol-muted">Abuse classification</dt>
+                <dd className="mt-1 font-mono text-patrol-text">
+                  abusive ({abuseCategoriesSummary(item.abuse_categories)})
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-patrol-muted">Target</dt>
               <dd className="text-patrol-text">@{item.target_username ?? '—'}</dd>

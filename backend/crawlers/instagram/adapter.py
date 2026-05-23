@@ -9,12 +9,12 @@ import asyncio
 import random
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Awaitable, Callable, List, Optional
 from uuid import uuid4
 
 from configs.settings import settings
 from services import system_settings as app_settings
-from crawlers.base_crawler import BaseCrawler, CrawledComment, CrawlResult, Platform
+from crawlers.base_crawler import BaseCrawler, CrawledComment, CrawlResult, CrawlerSessionError, Platform
 from crawlers.instagram.comment_monitor import CommentMonitor
 from crawlers.instagram.parser import parse_comments_from_html
 from crawlers.instagram.screenshot import capture_page_screenshot
@@ -33,7 +33,13 @@ class InstagramCrawler(BaseCrawler):
         "Report kar dunga police mein",
     ]
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self,
+        *,
+        login_username: Optional[str] = None,
+        login_password: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         super().__init__(
             platform=Platform.INSTAGRAM,
             storage_path=settings.SCREENSHOTS_PATH / "instagram",
@@ -43,65 +49,194 @@ class InstagramCrawler(BaseCrawler):
         )
         self._sessions = InstagramSessionManager()
         self._page = None
+        self._login_username = login_username
+        self._login_password = login_password
+        self._last_login_error: Optional[str] = None
 
     @property
     def demo_mode(self) -> bool:
-        if app_settings.get_crawler_demo_mode():
+        return False
+
+    def _credentials_missing_message(self) -> str:
+        return (
+            "Instagram not connected. In Settings, click Connect Instagram and log in "
+            "in the browser window (session cookies are saved for crawls)."
+        )
+
+    def _has_instagram_auth(self) -> bool:
+        if self._sessions.has_saved_session():
             return True
-        return not app_settings.instagram_credentials_configured()
+        if self._login_username and self._login_password:
+            return True
+        return app_settings.instagram_auth_configured()
 
     async def setup_session(self) -> bool:
-        if self.demo_mode:
+        if not self._has_instagram_auth():
+            self.logger.error(self._credentials_missing_message())
+            return False
+        try:
+            ok = await self._launch_instagram_browser()
+            if not ok or self._context is None or self._browser is None:
+                self.logger.error("Playwright failed to launch browser for Instagram")
+                return False
+
+            storage = self._sessions.load_storage_state()
+            if storage:
+                try:
+                    await self._context.close()
+                    self._context = await self._browser.new_context(
+                        storage_state=storage,
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/122.0.0.0 Safari/537.36"
+                        ),
+                        viewport={"width": 1280, "height": 900},
+                        locale="en-IN",
+                    )
+                    await self._context.add_init_script(
+                        "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+                    )
+                except Exception as exc:
+                    self.logger.warning(
+                        "Could not restore Instagram session file (%s); using fresh login",
+                        exc,
+                    )
+                    self._context = await self._browser.new_context(
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/122.0.0.0 Safari/537.36"
+                        ),
+                        viewport={"width": 1280, "height": 900},
+                        locale="en-IN",
+                    )
+                    await self._context.add_init_script(
+                        "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+                    )
+
+            self._page = await self._context.new_page()
             self._is_running = True
-            self.logger.info("Instagram crawler in demo mode — skipping browser")
             return True
-        ok = await super().setup_session()
-        if not ok or self._context is None:
+        except Exception as exc:
+            self.logger.error("Instagram browser setup error: %s", exc, exc_info=True)
             return False
 
-        storage = self._sessions.load_storage_state()
-        if storage:
-            await self._context.close()
+    async def _launch_instagram_browser(self) -> bool:
+        """Launch Chromium; prefer installed Chrome/Edge on Windows (better for Instagram)."""
+        try:
+            from playwright.async_api import async_playwright
+
+            self._playwright = await async_playwright().start()
+            launch_args = {
+                "headless": self.headless,
+                "args": [
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                ],
+            }
+            browser = None
+            for channel in ("chrome", "msedge", None):
+                try:
+                    if channel:
+                        browser = await self._playwright.chromium.launch(
+                            channel=channel, **launch_args
+                        )
+                        self.logger.info("Using %s for Instagram", channel)
+                    else:
+                        browser = await self._playwright.chromium.launch(**launch_args)
+                    break
+                except Exception as exc:
+                    self.logger.debug("Browser channel %s failed: %s", channel, exc)
+            if not browser:
+                return False
+            self._browser = browser
             self._context = await self._browser.new_context(
-                storage_state=storage,
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
+                    "Chrome/122.0.0.0 Safari/537.36"
                 ),
                 viewport={"width": 1280, "height": 900},
                 locale="en-IN",
             )
-
-        self._page = await self._context.new_page()
-        return True
+            await self._context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+            )
+            self._is_running = True
+            return True
+        except Exception as exc:
+            self.logger.error("Failed to initialize browser: %s", exc)
+            return False
 
     async def teardown_session(self):
-        if self.demo_mode:
-            self._is_running = False
+        self._page = None
+        try:
+            if self._context:
+                await self._context.close()
+            if self._browser:
+                await self._browser.close()
+            if hasattr(self, "_playwright") and self._playwright:
+                await self._playwright.stop()
+        except Exception as exc:
+            self.logger.warning("Error during session teardown: %s", exc)
+        self._is_running = False
+
+    async def _dismiss_cookie_banner(self) -> None:
+        if not self._page:
             return
-        await super().teardown_session()
+        for label in (
+            "Allow all cookies",
+            "Allow essential and optional cookies",
+            "Accept",
+            "Accept All",
+        ):
+            try:
+                btn = self._page.get_by_role("button", name=label, exact=False).first
+                if await btn.is_visible(timeout=1500):
+                    await btn.click()
+                    await asyncio.sleep(1)
+                    return
+            except Exception:
+                continue
+
+    def _resolve_login_credentials(self) -> tuple[Optional[str], Optional[str]]:
+        user = (self._login_username or app_settings.get_instagram_username() or "").strip()
+        pwd = self._login_password or app_settings.get_instagram_password() or ""
+        return user or None, pwd or None
 
     async def _login_if_needed(self) -> bool:
-        if self.demo_mode or not self._sessions.credentials_configured():
-            return True
-        if self._sessions.has_saved_session():
-            return True
         if not self._page:
             return False
 
-        user = app_settings.get_instagram_username()
-        password = app_settings.get_instagram_password()
-        assert user and password
-
-        await self._page.goto("https://www.instagram.com/accounts/login/", wait_until="domcontentloaded")
+        await self._page.goto("https://www.instagram.com/", wait_until="load", timeout=90000)
         await asyncio.sleep(2)
-        await self._page.fill('input[name="username"]', user)
-        await self._page.fill('input[name="password"]', password)
-        await self._page.click('button[type="submit"]')
-        await asyncio.sleep(5)
-        await self._sessions.save_storage_state(self._context)
-        return "login" not in self._page.url
+        await self._dismiss_cookie_banner()
+
+        if "accounts/login" not in self._page.url.lower():
+            self.logger.info("Instagram session active")
+            return True
+
+        user, pwd = self._resolve_login_credentials()
+        if user and pwd:
+            from crawlers.instagram.login_flow import perform_instagram_login
+
+            ok, msg = await perform_instagram_login(self._page, user, pwd)
+            if ok:
+                await self._sessions.save_storage_state(self._context)
+                self.logger.info("Instagram login: %s", msg)
+                return True
+            self.logger.warning("Instagram login failed: %s", msg)
+            self._last_login_error = msg
+            return False
+
+        self._last_login_error = (
+            "Instagram session expired. In Settings, click Connect Instagram and log in again."
+        )
+        self.logger.warning(self._last_login_error)
+        return False
 
     async def crawl_comments(
         self,
@@ -109,8 +244,8 @@ class InstagramCrawler(BaseCrawler):
         post_url: str,
         max_comments: int = 100,
     ) -> List[CrawledComment]:
-        if self.demo_mode:
-            return self._demo_comments(target_username, post_url, max_comments)
+        if not app_settings.instagram_auth_configured():
+            raise RuntimeError(self._credentials_missing_message())
 
         if not self._page:
             raise RuntimeError("Browser session not initialized")
@@ -200,23 +335,60 @@ class InstagramCrawler(BaseCrawler):
         *,
         max_comments: int = 50,
         known_hashes: Optional[set[str]] = None,
+        historical: bool = False,
+        max_posts: Optional[int] = None,
+        max_comments_per_post: Optional[int] = None,
+        checkpoint: Optional[object] = None,
+        on_post_saved: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> CrawlResult:
-        """Full crawl cycle for a target's profile (recent post context)."""
+        """
+        Full crawl for a target profile.
+
+        Regular: quick pass on profile page (recent visible comments).
+        Historical: scroll profile for older posts, open each post, crawl all comments.
+        """
         started = datetime.now(timezone.utc)
         post_url = f"https://www.instagram.com/{target_username}/"
+        crawl_progress: dict = {}
 
         try:
-            comments = await self.crawl_comments(target_username, post_url, max_comments)
+            if not self._page:
+                raise CrawlerSessionError(
+                    "Browser session not initialized. "
+                    + self._credentials_missing_message()
+                    if not app_settings.instagram_auth_configured()
+                    else (
+                        "Restart the API (without --reload on Windows), ensure "
+                        "`python -m playwright install chromium` was run, and test "
+                        "Instagram connection in Settings."
+                    )
+                )
+
+            if historical:
+                comments, pages, crawl_progress = await self._crawl_historical(
+                    target_username,
+                    max_posts=max_posts or settings.HISTORICAL_CRAWL_MAX_POSTS,
+                    max_comments_per_post=max_comments_per_post
+                    or settings.HISTORICAL_CRAWL_MAX_COMMENTS_PER_POST,
+                    checkpoint=checkpoint,
+                    on_post_saved=on_post_saved,
+                )
+            else:
+                comments = await self.crawl_comments(target_username, post_url, max_comments)
+                pages = 1
+
             monitor = CommentMonitor(known_hashes)
             new_comments = monitor.filter_new(comments)
             duration = (datetime.now(timezone.utc) - started).total_seconds()
+            progress = crawl_progress if historical else {}
             return CrawlResult(
                 platform=self.platform,
                 target_username=target_username,
                 success=True,
                 comments=new_comments,
-                pages_crawled=1,
+                pages_crawled=pages,
                 duration_seconds=duration,
+                crawl_progress=progress,
             )
         except Exception as exc:
             duration = (datetime.now(timezone.utc) - started).total_seconds()
@@ -228,3 +400,135 @@ class InstagramCrawler(BaseCrawler):
                 error=str(exc),
                 duration_seconds=duration,
             )
+
+    async def _crawl_historical(
+        self,
+        target_username: str,
+        *,
+        max_posts: int,
+        max_comments_per_post: int,
+        checkpoint: Optional[object] = None,
+        on_post_saved: Optional[Callable[[], Awaitable[None]]] = None,
+    ) -> tuple[List[CrawledComment], int, dict]:
+        """Scroll profile, visit posts, incremental comments using per-target checkpoint."""
+        from crawlers.instagram.historical import collect_post_urls, crawl_post_comments
+        from services.crawl_checkpoint import build_run_progress_entry, extract_post_id
+
+        if not self._page:
+            raise RuntimeError("Browser session not initialized")
+
+        logged_in = await self._login_if_needed()
+        if not logged_in:
+            self.logger.warning(
+                "Instagram login not confirmed for @%s — attempting public profile crawl",
+                target_username,
+            )
+        self.logger.info(
+            "Historical crawl @%s: up to %d posts, %d comments/post (checkpoint=%s)",
+            target_username,
+            max_posts,
+            max_comments_per_post,
+            "yes" if checkpoint else "no",
+        )
+
+        post_urls = await collect_post_urls(
+            self._page,
+            target_username,
+            max_posts=max_posts,
+            scroll_rounds=settings.HISTORICAL_CRAWL_PROFILE_SCROLLS,
+        )
+
+        ckpt = checkpoint
+        if ckpt and ckpt.pending_post_urls:
+            merged = list(dict.fromkeys(ckpt.pending_post_urls + post_urls))
+            post_urls = merged[:max_posts]
+        if ckpt:
+            ckpt.pending_post_urls = list(post_urls)
+
+        if not post_urls:
+            self.logger.warning("No post URLs found for @%s — falling back to profile page", target_username)
+            comments = await self.crawl_comments(
+                target_username,
+                f"https://www.instagram.com/{target_username}/",
+                max_comments_per_post * max(1, max_posts // 2),
+            )
+            return comments, 1, {"posts": [], "fallback": "profile_page"}
+
+        all_comments: List[CrawledComment] = []
+        run_posts: list[dict] = []
+        for i, url in enumerate(post_urls, start=1):
+            pid = extract_post_id(url)
+            post_cp = ckpt.get_post(url) if ckpt else None
+            known_ids = post_cp.known_comment_ids if post_cp else set()
+            known_hashes = post_cp.known_hashes if post_cp else set()
+
+            self.logger.info(
+                "Historical post %d/%d: %s (known_ids=%d, incremental=%s)",
+                i,
+                len(post_urls),
+                url,
+                len(known_ids),
+                bool(known_ids or known_hashes),
+            )
+            try:
+                outcome = await crawl_post_comments(
+                    self._page,
+                    url,
+                    target_username,
+                    max_comments_per_post,
+                    self.rate_limit_wait,
+                    known_comment_ids=known_ids,
+                    known_hashes=known_hashes,
+                    incremental=True,
+                )
+                batch = outcome.comments
+                all_comments.extend(batch)
+
+                if ckpt:
+                    ckpt.register_comments(url, batch)
+                    if outcome.stopped_at_known or len(batch) < max_comments_per_post:
+                        ckpt.mark_post_complete(url, fully=True)
+                    if url in ckpt.pending_post_urls:
+                        ckpt.pending_post_urls = [u for u in ckpt.pending_post_urls if u != url]
+                    if on_post_saved:
+                        await on_post_saved()
+
+                run_posts.append(
+                    build_run_progress_entry(
+                        url,
+                        new_comments=len(batch),
+                        stopped_at_known=outcome.stopped_at_known,
+                    )
+                )
+            except Exception as exc:
+                self.logger.warning("Failed post %s: %s", url, exc)
+                run_posts.append(
+                    {
+                        "post_id": pid,
+                        "post_url": url,
+                        "error": str(exc),
+                        "new_comments": 0,
+                    }
+                )
+            await self.rate_limit_wait(settings.HISTORICAL_CRAWL_POST_DELAY_SEC)
+
+        progress = {
+            "profile_username": target_username,
+            "posts_total": len(post_urls),
+            "posts": run_posts,
+            "comments_collected": len(all_comments),
+        }
+        if ckpt:
+            progress["checkpoint"] = {
+                "posts_tracked": len(ckpt.posts),
+                "posts_completed": sum(1 for p in ckpt.posts.values() if p.fully_crawled),
+                "pending_posts": len(ckpt.pending_post_urls),
+            }
+
+        self.logger.info(
+            "Historical crawl @%s: %d posts, %d new comments this run",
+            target_username,
+            len(post_urls),
+            len(all_comments),
+        )
+        return all_comments, len(post_urls), progress

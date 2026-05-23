@@ -31,6 +31,10 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+class CrawlerSessionError(RuntimeError):
+    """Browser/credentials setup failed before crawling."""
+
+
 class Platform(str, Enum):
     INSTAGRAM = "instagram"
     FACEBOOK = "facebook"
@@ -95,6 +99,7 @@ class CrawlResult:
     pages_crawled: int = 0
     duration_seconds: float = 0.0
     crawled_at: datetime = field(default_factory=datetime.utcnow)
+    crawl_progress: Dict[str, Any] = field(default_factory=dict)
 
 
 class BaseCrawler(ABC):
@@ -250,7 +255,14 @@ class BaseCrawler(ABC):
     # ── Context manager support ────────────────────────────
 
     async def __aenter__(self):
-        await self.setup_session()
+        ok = await self.setup_session()
+        if not ok:
+            raise CrawlerSessionError(
+                f"{self.platform.value} browser session failed to start. "
+                "Connect Instagram in Settings (browser login), run "
+                "`python -m playwright install chromium` in backend/.venv, and "
+                "restart the API without --reload if crawls fail on Windows."
+            )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

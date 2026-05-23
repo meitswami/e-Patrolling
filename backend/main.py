@@ -42,22 +42,54 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     await init_db()
     logger.info("✅ Database connection pool initialized")
 
-    from database.connection import async_session_factory, engine as db_engine
+    from database.connection import (
+        async_session_factory,
+        engine as db_engine,
+        verify_db_connection,
+    )
     from database.models import SystemSetting
     from services import system_settings as sys_settings
 
-    if async_session_factory and db_engine:
-        from database.migrate import run_pending_migrations
+    db_ok = False
+    try:
+        await verify_db_connection()
+        db_ok = True
+        logger.info("✅ Database reachable (Supabase)")
+    except OSError as exc:
+        logger.error(
+            "❌ Database host unreachable (%s). "
+            "EC2 needs outbound internet (IGW/NAT) and port 5432 open. "
+            "Use repo-root .env or backend/.env with DATABASE_URL; "
+            "prefer direct host db.<project>.supabase.co:5432 over pooler if routing fails.",
+            exc,
+        )
+    except Exception as exc:
+        logger.error("❌ Database connection failed: %s", exc)
 
-        await run_pending_migrations(db_engine)
-        async with db_engine.begin() as conn:
-            await conn.run_sync(
-                lambda sync_conn: SystemSetting.__table__.create(sync_conn, checkfirst=True)
-            )
-        async with async_session_factory() as session:
-            await sys_settings.load_cache(session)
-            await session.commit()
-        logger.info("✅ System settings loaded from database")
+    if db_ok and async_session_factory and db_engine:
+        try:
+            from database.migrate import run_pending_migrations
+
+            await run_pending_migrations(db_engine)
+            from database.models import TargetCrawlCheckpoint
+
+            async with db_engine.begin() as conn:
+                await conn.run_sync(
+                    lambda sync_conn: SystemSetting.__table__.create(sync_conn, checkfirst=True)
+                )
+                await conn.run_sync(
+                    lambda sync_conn: TargetCrawlCheckpoint.__table__.create(sync_conn, checkfirst=True)
+                )
+            async with async_session_factory() as session:
+                await sys_settings.load_cache(session)
+                await sys_settings.upsert_crawler_settings(
+                    session,
+                    crawler_demo_mode=False,
+                )
+                await session.commit()
+            logger.info("✅ System settings loaded from database")
+        except Exception as exc:
+            logger.warning("System settings bootstrap skipped: %s", exc)
 
     # Initialize Redis (optional — not required for auth/API MVP)
     from task_queue.producer import init_redis, close_redis, is_redis_available
@@ -154,14 +186,26 @@ app.mount(
 @app.get("/health", tags=["System"])
 async def health_check():
     """System health check for Docker and load balancers."""
+    from database.connection import engine as db_engine, verify_db_connection
     from task_queue.producer import is_redis_available
 
+    db_status = "not_initialized"
+    if db_engine is not None:
+        try:
+            await verify_db_connection()
+            db_status = "connected"
+        except Exception as exc:
+            db_status = f"error: {exc}"
+
+    overall = "healthy" if db_status == "connected" else "degraded"
     return {
-        "status": "healthy",
+        "status": overall,
         "service": "PATROL API",
         "version": "1.0.0-MVP",
         "environment": settings.ENVIRONMENT,
+        "database": db_status,
         "redis": "connected" if is_redis_available() else "disabled",
+        "cors_origins": settings.ALLOWED_ORIGINS,
     }
 
 

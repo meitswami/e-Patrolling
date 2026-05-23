@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.schemas.common import PaginatedResponse
 from api.schemas.target import TargetCreate, TargetResponse, TargetUpdate
 from auth.middleware import get_current_user
-from auth.rbac import require_analyst
+from auth.rbac import require_admin, require_analyst
 from database.connection import get_session
 from crawlers.registry import is_patrol_platform
 from database.models import PlatformType, TargetAccount, User
@@ -117,6 +117,63 @@ async def update_target(
     await session.flush()
     await session.refresh(target)
     return TargetResponse.model_validate(target)
+
+
+@router.post("/{target_id}/reset-crawl-state")
+async def reset_target_crawl_state(
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+    forget_comments: bool = Query(
+        True,
+        description="Also delete stored comments/evidence so crawls re-read test comments",
+    ),
+) -> dict:
+    """Clear per-target checkpoint (and optionally comment history) for a fresh crawl."""
+    target = await session.get(TargetAccount, target_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+    from services.crawl_checkpoint import clear_target_crawl_state
+
+    return await clear_target_crawl_state(
+        session, target_id, forget_stored_comments=forget_comments
+    )
+
+
+@router.post("/reset-crawl-state-all")
+async def reset_all_crawl_state(
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_admin),
+    forget_comments: bool = Query(True),
+) -> dict:
+    """Clear all target checkpoints (testing reset)."""
+    from services.crawl_checkpoint import clear_all_crawl_checkpoints
+
+    return await clear_all_crawl_checkpoints(session, forget_stored_comments=forget_comments)
+
+
+@router.get("/{target_id}/crawl-checkpoint")
+async def get_target_crawl_checkpoint(
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Per-target crawl resume state: posts crawled, last comment id/hash per post."""
+    target = await session.get(TargetAccount, target_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+
+    from services.crawl_checkpoint import load_target_checkpoint
+
+    state = await load_target_checkpoint(session, target)
+    return {
+        "target_id": str(target_id),
+        "profile_username": state.profile_username,
+        "platform": state.platform,
+        "last_run_at": state.last_run_at,
+        "pending_posts": len(state.pending_post_urls),
+        "posts": [p.to_dict() for p in state.posts.values()],
+    }
 
 
 @router.delete("/{target_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -1,14 +1,25 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "patterns": [
     { "regex": "\\b(rape|balatkar|balaatkar)\\b", "score": 0.95, "label": "rape_threat" },
     { "regex": "\\b(mar\\s*dal|maar\\s*dal|kill\\s*you|kill\\s*her)\\b", "score": 0.9, "label": "threat" },
     { "regex": "\\b(bahar\\s*aa|nikal\\s*ke|dekh\\s*lunga)\\b", "score": 0.75, "label": "stalking" },
     { "regex": "\\b(kapde|kapdon|attention\\s*maang)\\b", "score": 0.7, "label": "sexual_harassment" },
     { "regex": "\\b(fake\\s*influencer|paid\\s*pr|jhooth)\\b", "score": 0.55, "label": "bullying" },
-    { "regex": "\\b(chinal|randi|slut|whore)\\b", "score": 0.88, "label": "sexual_harassment" },
-    { "regex": "\\b(tere\\s*ghar|teri\\s*maa|teri\\s*behen)\\b", "score": 0.85, "label": "threat" },
+    { "regex": "\\b(chinal|randi|rand|slut|whore|prostitute)\\b", "score": 0.88, "label": "sexual_harassment" },
+    { "regex": "\\b(tere\\s*ghar|teri\\s*maa|teri\\s*behen|teri\\s*ma)\\b", "score": 0.85, "label": "threat" },
     { "regex": "\\b(block\\s*kar|phir\\s*bhi\\s*dekh)\\b", "score": 0.65, "label": "stalking" },
-    { "regex": "\\b(sabak|sikhaunga|sikha\\s*dunga)\\b", "score": 0.72, "label": "threat" }
+    { "regex": "\\b(sabak|sikhaunga|sikha\\s*dunga)\\b", "score": 0.72, "label": "threat" },
+    { "regex": "\\b(bsdk|bsdka|bsdki|bhosdi\\s*ke|bhosdike|bhosadike)\\b", "score": 0.92, "label": "hate_speech" },
+    { "regex": "\\b(bc|b\\.c\\.|behenchod|behen\\s*chod|bhenchod|bhen\\s*chod)\\b", "score": 0.9, "label": "hate_speech" },
+    { "regex": "\\b(mc|m\\.c\\.|madarchod|madar\\s*chod|maadarchod)\\b", "score": 0.92, "label": "hate_speech" },
+    { "regex": "\\b(chutiya|chutiy|chutiye|chutia|chu\\s*tiya)\\b", "score": 0.88, "label": "hate_speech" },
+    { "regex": "\\b(gaandu|gandu|gaand|g\\s*a\\s*a\\s*n\\s*d)\\b", "score": 0.85, "label": "hate_speech" },
+    { "regex": "\\b(lund|lawda|lauda|loda)\\b", "score": 0.88, "label": "sexual_harassment" },
+    { "regex": "\\b(chut|choot|chut\\s*mar)\\b", "score": 0.9, "label": "sexual_harassment" },
+    { "regex": "\\b(fake\\s*bc|fake\\s*mc|fake\\s*bsdk)\\b", "score": 0.82, "label": "bullying" },
+    { "regex": "\\b(wanna\\s*meet\\s*for\\s*sex|want\\s*to\\s*meet\\s*for\\s*sex|meet\\s*for\\s*sex|sex\\s*chat|send\\s*nudes|nude\\s*pic)\\b", "score": 0.9, "label": "sexual_harassment" },
+    { "regex": "\\b(hot\\s*babe|sexy\\s*pic|rate\\s*your|dm\\s*for\\s*fun)\\b", "score": 0.75, "label": "sexual_harassment" },
+    { "regex": "\\b(item|maal|raand)\\b", "score": 0.8, "label": "sexual_harassment" }
   ]
 }

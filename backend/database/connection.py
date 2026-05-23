@@ -4,6 +4,7 @@ import ssl
 from collections.abc import AsyncGenerator
 from typing import Optional
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -18,6 +19,14 @@ logger = get_logger(__name__)
 
 engine: Optional[AsyncEngine] = None
 async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+
+
+async def verify_db_connection() -> None:
+    """Open one connection at startup; raises if the host is unreachable."""
+    if engine is None:
+        raise RuntimeError("Database not initialized — call init_db() first")
+    async with engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
 
 
 async def init_db() -> None:

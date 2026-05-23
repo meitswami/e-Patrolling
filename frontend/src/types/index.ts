@@ -72,6 +72,18 @@ export interface EvidenceListItem {
   screenshot_path: string | null
   target_username: string | null
   accused_username: string | null
+  abuse_categories: string[]
+  is_abusive: boolean
+  is_lexicon_match: boolean
+  abuse_explanations: AbuseExplanationItem[]
+}
+
+export interface AbuseExplanationItem {
+  kind: string
+  title: string
+  meaning_en: string
+  offender_implication: string
+  related_categories?: string[]
 }
 
 export interface TargetAccount {

@@ -1,0 +1,130 @@
+{
+  "version": "1.0",
+  "phrases": [
+    {
+      "id": "fake_bc",
+      "detect": "\\bfake\\s*bc\\b",
+      "display": "fake bc",
+      "also_blocks": ["bc"],
+      "categories": ["hate_speech", "bullying"],
+      "meaning_en": "Combines “fake” (dishonest, inauthentic) with “bc”, which in Hindi/Hinglish online slang is shorthand for behenchod — a severe gendered insult.",
+      "offender_implication": "Attacks the target’s credibility and character at once: implies they are a fraud or liar while using a vulgar slur to demean and provoke public shame."
+    },
+    {
+      "id": "fake_bsdk",
+      "detect": "\\bfake\\s*bsdk\\b",
+      "display": "fake bsdk",
+      "also_blocks": ["bsdk"],
+      "categories": ["hate_speech", "bullying"],
+      "meaning_en": "“Fake” plus bsdk (bhosdi ke / son of a whore) — an extremely offensive Hindi slur compound.",
+      "offender_implication": "Publicly brands the target as dishonest and hurls a dehumanizing insult meant to humiliate and draw hostile pile-on from others."
+    },
+    {
+      "id": "fake_mc",
+      "detect": "\\bfake\\s*mc\\b",
+      "display": "fake mc",
+      "also_blocks": ["mc"],
+      "categories": ["hate_speech", "bullying"],
+      "meaning_en": "“Fake” paired with mc (madarchod — mother-related slur).",
+      "offender_implication": "Questions the target’s authenticity while using a violent-family insult to maximize offense and social damage."
+    },
+    {
+      "id": "meet_for_sex",
+      "detect": "\\b(wanna|want\\s*to)\\s*meet\\s*for\\s*sex\\b|\\bmeet\\s*for\\s*sex\\b",
+      "display": "meet for sex / wanna meet for sex",
+      "categories": ["sexual_harassment"],
+      "meaning_en": "Direct sexual solicitation in English (often obfuscated as S*X). Not a debate — an unwanted sexual proposition.",
+      "offender_implication": "Treats the target as a sexual object, ignores consent and context, and may pressure or expose them to unwanted sexual attention in a public comment thread."
+    },
+    {
+      "id": "send_nudes",
+      "detect": "\\b(send\\s*nudes|nude\\s*pic|sexy\\s*pic)\\b",
+      "display": "send nudes / nude pic",
+      "categories": ["sexual_harassment"],
+      "meaning_en": "Requests intimate images without consent.",
+      "offender_implication": "Pressures the target for sexual material; often used to harass, extort, or humiliate."
+    }
+  ],
+  "terms": [
+    {
+      "id": "bc",
+      "detect": "\\b(bc|b\\.c\\.|behenchod|behen\\s*chod|bhenchod|bhen\\s*chod)\\b",
+      "display": "bc",
+      "categories": ["hate_speech"],
+      "meaning_en": "In Hindi/Hinglish social media, “bc” usually means behenchod (literally “sister-f***er”) — a highly offensive swear used as an insult, not a literal family reference.",
+      "offender_implication": "Meant to shock, demean, and provoke; signals contempt and aggression rather than constructive criticism."
+    },
+    {
+      "id": "bsdk",
+      "detect": "\\b(bsdk|bsdka|bsdki|bhosdi\\s*ke|bhosdike|bhosadike)\\b",
+      "display": "bsdk",
+      "categories": ["hate_speech"],
+      "meaning_en": "Short for bhosdi ke (“son of a whore”) — among the strongest Hindi profanities used online.",
+      "offender_implication": "Deliberate dehumanization and public humiliation; often posted to invite ridicule or escalate conflict."
+    },
+    {
+      "id": "mc",
+      "detect": "\\b(mc|m\\.c\\.|madarchod|madar\\s*chod|maadarchod)\\b",
+      "display": "mc",
+      "categories": ["hate_speech"],
+      "meaning_en": "Short for madarchod (“mother-f***er”) — a severe Hindi/Urdu slur.",
+      "offender_implication": "Expresses extreme hostility; used to intimidate, insult, or dominate in an argument."
+    },
+    {
+      "id": "chutiya",
+      "detect": "\\b(chutiya|chutiy|chutiye|chutia)\\b",
+      "display": "chutiya",
+      "categories": ["hate_speech"],
+      "meaning_en": "Vulgar Hindi insult implying stupidity or worthlessness (from chut — genital slang).",
+      "offender_implication": "Dismisses the target’s intelligence or dignity to silence or mock them."
+    },
+    {
+      "id": "randi",
+      "detect": "\\b(randi|rand|raand|chinal)\\b",
+      "display": "randi / raand",
+      "categories": ["sexual_harassment", "hate_speech"],
+      "meaning_en": "Hindi slur meaning “prostitute,” used to shame women (or anyone) with sexualized abuse.",
+      "offender_implication": "Sexualized degradation — attacks honour, gender, and safety; can escalate to coordinated harassment."
+    },
+    {
+      "id": "lund",
+      "detect": "\\b(lund|lawda|lauda|loda)\\b",
+      "display": "lund / lauda",
+      "categories": ["sexual_harassment"],
+      "meaning_en": "Vulgar Hindi word for penis, used in insults or sexual harassment.",
+      "offender_implication": "Crude sexual aggression or emasculation — makes the space hostile and unsafe."
+    },
+    {
+      "id": "teri_maa",
+      "detect": "\\b(teri\\s*maa|teri\\s*ma|teri\\s*behen)\\b",
+      "display": "teri maa / teri behen",
+      "categories": ["threat", "hate_speech"],
+      "meaning_en": "“Your mother” / “your sister” — common setup for family-targeted threats or slurs in Hindi fights.",
+      "offender_implication": "Escalates to personal/family attack; often precedes or accompanies threats and severe slurs."
+    },
+    {
+      "id": "rape",
+      "detect": "\\b(rape|balatkar|balaatkar)\\b",
+      "display": "rape / balatkar",
+      "categories": ["rape_threat"],
+      "meaning_en": "References rape literally or as “balatkar” (Hindi). In comments, often used as threat or wish of harm.",
+      "offender_implication": "Creates fear of sexual violence; may be illegal threat speech and causes severe psychological harm."
+    },
+    {
+      "id": "kill",
+      "detect": "\\b(kill\\s*you|kill\\s*her|mar\\s*dal|maar\\s*dal)\\b",
+      "display": "kill you / mar dal",
+      "categories": ["threat"],
+      "meaning_en": "Direct or implied threat of physical harm (“I will kill you” / “mar dalunga”).",
+      "offender_implication": "Intimidation and fear — signals intent to harm or encourages violence."
+    },
+    {
+      "id": "fake_influencer",
+      "detect": "\\b(fake\\s*influencer|paid\\s*pr|jhooth)\\b",
+      "display": "fake influencer / jhooth",
+      "categories": ["bullying"],
+      "meaning_en": "Accuses the target of being fraudulent, paid PR, or lying.",
+      "offender_implication": "Reputational attack to undermine trust, sponsorship, and audience — can damage livelihood."
+    }
+  ]
+}

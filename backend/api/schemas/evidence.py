@@ -1,7 +1,7 @@
 """Evidence report schemas."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -22,8 +22,18 @@ class EvidenceListItem(BaseModel):
     screenshot_path: Optional[str]
     target_username: Optional[str] = None
     accused_username: Optional[str] = None
+    abuse_categories: List[str] = []
+    is_abusive: bool = True
+    is_lexicon_match: bool = False
+    abuse_explanations: List[Dict[str, Any]] = []
 
     model_config = {"from_attributes": True}
+
+
+class EvidenceBackfillResponse(BaseModel):
+    total: int
+    updated: int
+    message: str
 
 
 class EvidenceDetail(EvidenceListItem):

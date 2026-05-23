@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from ai.abuse_explanations import build_abuse_explanations
 from ai.risk_scoring import composite_risk_score
 from database.models import AccusedProfile, CrawledComment, EvidenceReport, TargetAccount
 from osint.permaliinks import build_comment_permalink
@@ -93,8 +94,20 @@ async def build_accused_dossier(
                 comment_url=comment_url,
             )
 
+        abuse_cats = permalink.get("abuse_categories") or []
+        expl = permalink.get("abuse_explanations")
+        if not isinstance(expl, list) or not expl:
+            expl = build_abuse_explanations(
+                row.comment_text or "",
+                abuse_cats if isinstance(abuse_cats, list) else [],
+            )
+
         ev_item = {
             "evidence_id": row.evidence_id,
+            "abuse_categories": abuse_cats if isinstance(abuse_cats, list) else [],
+            "abuse_explanations": expl,
+            "is_abusive": True,
+            "is_lexicon_match": bool(permalink.get("is_lexicon_match")),
             "platform": plat,
             "severity": sev,
             "risk_score": row.risk_score,

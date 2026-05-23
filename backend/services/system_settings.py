@@ -79,10 +79,8 @@ def _raw(key: str) -> Optional[str]:
 
 
 def get_crawler_demo_mode() -> bool:
-    raw = _raw("crawler_demo_mode")
-    if raw is None:
-        return settings.CRAWLER_DEMO_MODE
-    return raw.strip().lower() in ("1", "true", "yes", "on")
+    """Demo mode disabled — PATROL runs live crawls only."""
+    return False
 
 
 def get_instagram_username() -> Optional[str]:
@@ -110,10 +108,22 @@ def get_evidence_screenshot_mode() -> str:
     return (settings.EVIDENCE_SCREENSHOT_MODE or "both").lower()
 
 
+def instagram_session_configured() -> bool:
+    from crawlers.instagram.session_manager import InstagramSessionManager
+
+    return InstagramSessionManager().has_saved_session()
+
+
 def instagram_credentials_configured() -> bool:
+    """Legacy: username + password in settings."""
     user = get_instagram_username()
     pwd = get_instagram_password()
     return bool(user and pwd)
+
+
+def instagram_auth_configured() -> bool:
+    """True when crawls can run: saved browser session (preferred) or legacy password."""
+    return instagram_session_configured() or instagram_credentials_configured()
 
 
 def has_instagram_password_in_db() -> bool:
@@ -172,9 +182,19 @@ def has_facebook_password_in_db() -> bool:
 
 async def get_crawler_settings_public() -> dict[str, Any]:
     """Safe view for API (no plaintext password)."""
+    from crawlers.instagram.session_manager import InstagramSessionManager
+
+    sessions = InstagramSessionManager()
+    session_ok = instagram_session_configured()
+    ig_ok = instagram_auth_configured()
+    connected_user = sessions.get_connected_username() or get_instagram_username() or ""
     return {
-        "crawler_demo_mode": get_crawler_demo_mode(),
-        "instagram_username": get_instagram_username() or "",
+        "crawler_demo_mode": False,
+        "mode": "live",
+        "instagram_username": connected_user,
+        "instagram_session_connected": session_ok,
+        "instagram_auth_configured": ig_ok,
+        "instagram_credentials_configured": ig_ok,
         "instagram_password_set": instagram_credentials_configured(),
         "instagram_password_configured_in_db": has_instagram_password_in_db(),
         "facebook_email": get_facebook_email() or "",
@@ -201,8 +221,8 @@ async def upsert_crawler_settings(
     """Persist crawler settings; password omitted or MASKED_SECRET keeps existing."""
     updates: dict[str, str] = {}
 
-    if crawler_demo_mode is not None:
-        updates["crawler_demo_mode"] = "true" if crawler_demo_mode else "false"
+    # Always persist live mode (demo removed)
+    updates["crawler_demo_mode"] = "false"
 
     if instagram_username is not None:
         updates["instagram_username"] = instagram_username.strip()

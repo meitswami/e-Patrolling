@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from ai.abuse_categories import extract_abuse_categories
 from ai.keyword_engine import analyze_text
 from ai.language_detector import detect_language
 from ai.hf_inference import score_via_inference_api
@@ -29,12 +30,20 @@ class ClassificationResult:
     is_hate_speech: bool = False
     is_threat: bool = False
     is_bullying: bool = False
+    abuse_categories: List[str] = field(default_factory=list)
     model_used: str = "keyword_v1"
 
 
 def classify_comment(text: str, language_hint: Optional[str] = None) -> ClassificationResult:
     """Classify comment text using keyword rules and optional ML toxicity."""
+    from ai.text_normalize import normalize_for_abuse_detection
+
+    normalized = normalize_for_abuse_detection(text)
     kw = analyze_text(text)
+    if not kw.is_abusive and normalized != text.lower().strip():
+        kw_norm = analyze_text(normalized)
+        if kw_norm.confidence_score > kw.confidence_score:
+            kw = kw_norm
 
     lang = LanguageType.UNKNOWN
     if language_hint:
@@ -53,8 +62,9 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
     api_score = score_via_inference_api(text) if use_hf else None
 
     indic_score = None
-    if use_ml and lang in (LanguageType.HINDI, LanguageType.HINGLISH, LanguageType.UNKNOWN):
-        indic_score = score_indic_abuse(text)
+    use_indic = settings.USE_INDICBERT or use_ml
+    if use_indic and lang in (LanguageType.HINDI, LanguageType.HINGLISH, LanguageType.UNKNOWN):
+        indic_score = score_indic_abuse(text) or score_indic_abuse(normalized)
 
     combined = kw.confidence_score
     model_used = "keyword_v1"
@@ -73,14 +83,25 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
 
     severity = severity_from_score(combined)
     risk = risk_score_from_confidence(combined)
-    is_abusive = combined >= threshold and (
-        kw.is_abusive
-        or any(s >= threshold for s in scores)
+    # Flag abusive if keywords matched OR combined score clears threshold (ML optional)
+    is_abusive = kw.is_abusive or combined >= threshold or any(
+        s >= max(0.5, threshold - 0.1) for s in scores
     )
 
     flags = kw.flags
     if ml_score and ml_score >= 0.7 and not flags:
         flags["ml_toxic"] = True
+
+    matched = kw.matched_keywords + (["ml_toxic"] if ml_score and ml_score >= 0.65 else [])
+    categories = extract_abuse_categories(
+        matched_keywords=matched,
+        is_sexual_harassment=flags.get("sexual_harassment", False),
+        is_rape_threat=flags.get("rape_threat", False),
+        is_stalking=flags.get("stalking", False),
+        is_hate_speech=flags.get("hate_speech", False) or bool(ml_score and ml_score >= 0.85),
+        is_threat=flags.get("threat", False),
+        is_bullying=flags.get("bullying", False),
+    )
 
     return ClassificationResult(
         is_abusive=is_abusive,
@@ -90,12 +111,13 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
         risk_score=risk,
         severity_score=risk,
         detected_language=lang,
-        matched_keywords=kw.matched_keywords + (["ml_toxic"] if ml_score and ml_score >= 0.65 else []),
+        matched_keywords=matched,
         is_sexual_harassment=flags.get("sexual_harassment", False),
         is_rape_threat=flags.get("rape_threat", False),
         is_stalking=flags.get("stalking", False),
         is_hate_speech=flags.get("hate_speech", False) or bool(ml_score and ml_score >= 0.85),
         is_threat=flags.get("threat", False),
         is_bullying=flags.get("bullying", False),
+        abuse_categories=categories,
         model_used=model_used,
     )

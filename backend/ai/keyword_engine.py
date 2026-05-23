@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Tuple
 
+from ai.text_normalize import normalize_for_abuse_detection
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -60,15 +61,18 @@ class KeywordMatchResult:
 
 def analyze_text(text: str) -> KeywordMatchResult:
     """Return abuse signals from keyword patterns."""
-    if not text or len(text.strip()) < 3:
+    if not text or len(text.strip()) < 2:
         return KeywordMatchResult()
+
+    normalized = normalize_for_abuse_detection(text)
+    search_text = f"{text} {normalized}"
 
     matched: List[str] = []
     flags: dict[str, bool] = {}
     max_score = 0.0
 
     for pattern, score, label in _COMPILED:
-        if pattern.search(text):
+        if pattern.search(search_text):
             matched.append(label)
             flags[label] = True
             max_score = max(max_score, score)

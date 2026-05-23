@@ -13,6 +13,7 @@ from sqlalchemy.orm import aliased
 
 from api.schemas.common import PaginatedResponse
 from api.schemas.evidence import (
+    EvidenceBackfillResponse,
     EvidenceDetail,
     EvidenceEscalateRequest,
     EvidenceEscalateResponse,
@@ -22,7 +23,17 @@ from auth.middleware import get_current_user
 from auth.rbac import require_admin, require_analyst
 from configs.settings import settings
 from database.connection import get_session
-from database.models import AccusedProfile, EvidenceReport, PlatformType, SeverityLevel, TargetAccount, User
+from api.helpers.evidence_abuse import apply_evidence_abuse_fields
+from services.evidence_backfill import backfill_evidence_abuse_categories
+from database.models import (
+    AIResult,
+    AccusedProfile,
+    EvidenceReport,
+    PlatformType,
+    SeverityLevel,
+    TargetAccount,
+    User,
+)
 
 router = APIRouter()
 
@@ -47,9 +58,11 @@ async def list_evidence(
             EvidenceReport,
             TargetAlias.username.label("target_username"),
             AccusedAlias.username.label("accused_username"),
+            AIResult,
         )
         .outerjoin(TargetAlias, EvidenceReport.target_id == TargetAlias.id)
         .outerjoin(AccusedAlias, EvidenceReport.accused_id == AccusedAlias.id)
+        .outerjoin(AIResult, EvidenceReport.ai_result_id == AIResult.id)
     )
 
     count_q = select(func.count()).select_from(EvidenceReport)
@@ -85,10 +98,11 @@ async def list_evidence(
     )
 
     items: list[EvidenceListItem] = []
-    for evidence, target_username, accused_username in rows.all():
+    for evidence, target_username, accused_username, ai_row in rows.all():
         item = EvidenceListItem.model_validate(evidence)
         item.target_username = target_username
         item.accused_username = accused_username
+        apply_evidence_abuse_fields(item, evidence, ai_row)
         items.append(item)
 
     return PaginatedResponse(
@@ -98,6 +112,16 @@ async def list_evidence(
         page_size=page_size,
         total_pages=max(1, math.ceil(total / page_size)) if total else 1,
     )
+
+
+@router.post("/backfill-categories", response_model=EvidenceBackfillResponse)
+async def backfill_evidence_categories(
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+) -> EvidenceBackfillResponse:
+    """One-click backfill of abuse category labels on all stored evidence."""
+    result = await backfill_evidence_abuse_categories(session)
+    return EvidenceBackfillResponse(**result)
 
 
 @router.get("/{evidence_id}", response_model=EvidenceDetail)
@@ -115,19 +139,22 @@ async def get_evidence(
             EvidenceReport,
             TargetAlias.username,
             AccusedAlias.username,
+            AIResult,
         )
         .outerjoin(TargetAlias, EvidenceReport.target_id == TargetAlias.id)
         .outerjoin(AccusedAlias, EvidenceReport.accused_id == AccusedAlias.id)
+        .outerjoin(AIResult, EvidenceReport.ai_result_id == AIResult.id)
         .where(EvidenceReport.id == evidence_id)
     )
     result = row.one_or_none()
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence not found")
 
-    evidence, target_username, accused_username = result
+    evidence, target_username, accused_username, ai_row = result
     detail = EvidenceDetail.model_validate(evidence)
     detail.target_username = target_username
     detail.accused_username = accused_username
+    apply_evidence_abuse_fields(detail, evidence, ai_row)
     return detail
 
 

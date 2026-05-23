@@ -19,13 +19,51 @@ class CrawlResultSummary(BaseModel):
     target_id: str
     target_username: Optional[str] = None
     platform: Optional[str] = None
+    log_id: Optional[str] = None
+    historical: bool = False
+    posts_crawled: int = 0
     success: bool
     comments_new: int = 0
     abusive_detected: int = 0
     critical_detected: int = 0
     duration_seconds: Optional[float] = None
-    demo_mode: Optional[bool] = None
+    evidence_ids: List[str] = []
     error: Optional[str] = None
+
+
+class RunningCrawlInfo(BaseModel):
+    target_id: str
+    target_username: str
+    platform: str
+    started_at: str
+    mode: str
+
+
+class CrawlLogEvidenceItem(BaseModel):
+    evidence_id: str
+    uuid: UUID
+    accused_username: Optional[str] = None
+    severity: str
+    risk_score: int
+    comment_preview: str
+    screenshot_path: Optional[str] = None
+    abuse_categories: List[str] = []
+    is_abusive: bool = True
+    is_lexicon_match: bool = False
+    abuse_explanations: List[Dict[str, Any]] = []
+
+
+class CrawlLogResultsResponse(BaseModel):
+    log_id: UUID
+    target_id: Optional[UUID] = None
+    target_username: Optional[str] = None
+    platform: str
+    success: bool
+    comments_new: int
+    abusive_detected: int
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    evidence: List[CrawlLogEvidenceItem] = []
 
 
 class PlatformPatrolInfo(BaseModel):
@@ -43,7 +81,9 @@ class CrawlerStatusResponse(BaseModel):
     redis_enabled: bool
     scheduler_enabled: bool
     crawl_interval_seconds: int
-    demo_mode: bool
+    mode: str = "live"
+    instagram_credentials_configured: bool = False
+    running_targets: List[RunningCrawlInfo] = []
     scheduler_is_running: bool = False
     scheduler_last_run_at: Optional[str] = None
     scheduler_last_run_status: Optional[str] = None
@@ -58,6 +98,7 @@ class CrawlerStatusResponse(BaseModel):
 class MonitoringLogItem(BaseModel):
     id: UUID
     target_id: Optional[UUID]
+    target_username: Optional[str] = None
     platform: PlatformType
     comments_found: int
     comments_new: int

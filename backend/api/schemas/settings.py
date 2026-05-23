@@ -6,7 +6,11 @@ from pydantic import BaseModel, Field
 
 
 class CrawlerSettingsResponse(BaseModel):
-    crawler_demo_mode: bool
+    crawler_demo_mode: bool = False
+    mode: str = "live"
+    instagram_session_connected: bool = False
+    instagram_auth_configured: bool = False
+    instagram_credentials_configured: bool = False
     instagram_username: str
     instagram_password_set: bool
     instagram_password_configured_in_db: bool

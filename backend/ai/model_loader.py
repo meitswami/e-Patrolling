@@ -106,7 +106,7 @@ def score_toxicity(text: str) -> Optional[float]:
 
 def score_indic_abuse(text: str) -> Optional[float]:
     """Hindi/Hinglish abuse score via dehatebert-mono-indic (when enabled)."""
-    if not settings.USE_INDICBERT or not text.strip():
+    if not (settings.USE_INDICBERT or settings.USE_ML_CLASSIFIER) or not text.strip():
         return None
 
     pipe = _load_indic_pipeline()

@@ -24,7 +24,16 @@ async def login(
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
     """Authenticate with email/password; returns JWT."""
-    result = await session.execute(select(User).where(User.email == body.email.lower()))
+    try:
+        result = await session.execute(select(User).where(User.email == body.email.lower()))
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Database unreachable from API server. "
+                "Check EC2 outbound internet and DATABASE_URL in .env."
+            ),
+        ) from exc
     user = result.scalar_one_or_none()
 
     if user is None or not verify_password(body.password, user.password_hash):

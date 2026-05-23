@@ -17,5 +17,16 @@ if (-not (Test-Path $Python)) {
 }
 
 Set-Location $Backend
+
+# Playwright crawls are unreliable with uvicorn --reload on Windows (child process).
+$Reload = $env:PATROL_UVICORN_RELOAD -eq "1"
+$UvicornArgs = @("main:app", "--host", "0.0.0.0", "--port", "8000")
+if ($Reload) {
+    $UvicornArgs += "--reload"
+    Write-Host "Reload enabled (PATROL_UVICORN_RELOAD=1). Crawls may fail - disable for Instagram." -ForegroundColor Yellow
+} else {
+    Write-Host "Starting without --reload (required for Playwright crawls)." -ForegroundColor Cyan
+}
+
 Write-Host "Starting PATROL API at http://127.0.0.1:8000 (cwd: $Backend)" -ForegroundColor Green
-& $Python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+& $Python -m uvicorn @UvicornArgs

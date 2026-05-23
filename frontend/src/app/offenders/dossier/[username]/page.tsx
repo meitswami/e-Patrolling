@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
+import { AbuseCategoryBadges } from '@/components/abuse/AbuseCategoryBadges'
+import { AbuseExplanationPanel } from '@/components/abuse/AbuseExplanationPanel'
+import { AbusiveCommentText } from '@/components/abuse/AbusiveCommentText'
 import { AppShell } from '@/components/layout/AppShell'
 import {
   accusedDossierPdfUrl,
@@ -333,9 +336,18 @@ export default function AccusedDossierPage() {
                         <span>→ @{ev.target_username}</span>
                       )}
                     </div>
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">
-                      {ev.comment_text}
-                    </p>
+                    {(ev.abuse_categories?.length ?? 0) > 0 && (
+                      <div className="mt-2">
+                        <AbuseCategoryBadges categories={ev.abuse_categories ?? []} />
+                      </div>
+                    )}
+                    <AbusiveCommentText
+                      className="mt-3 whitespace-pre-wrap"
+                      text={ev.comment_text}
+                      abusive={ev.is_abusive ?? true}
+                      lexiconMatch={ev.is_lexicon_match}
+                    />
+                    <AbuseExplanationPanel explanations={ev.abuse_explanations ?? []} />
                     <div className="mt-2 flex flex-wrap gap-3 text-xs">
                       {ev.comment_posted_at && (
                         <span className="text-patrol-muted">

@@ -30,10 +30,15 @@ It combines **real-time social media crawling**, **multilingual AI abuse detecti
 
 ### 🤖 AI-Powered Detection
 - **Multilingual NLP**: Hindi, English, Hinglish (Latin-script Hindi)
-- **7 abuse categories**: Sexual harassment, rape threats, stalking, hate speech, doxxing, threats, bullying
+- **Keyword lexicon + optional ML**: Fast pattern matching by default (`USE_ML_CLASSIFIER=false`); IndicBERT / MiniLM when enabled in Settings
+- **Abuse categories** (stored per comment & evidence):
+  - `sexual_harassment` · `rape_threat` · `stalking` · `hate_speech` · `threat` · `bullying`
+  - Combined labels supported (e.g. `hate_speech + bullying` for *fake bc*)
+- **Hinglish / romanized slur detection**: `bc`, `bsdk`, `mc`, `fake bc`, sexual solicitation (`S*X` → normalized), and more via `ai_models/configs/abuse_lexicon.json`
+- **Investigator explanations**: Auto-generated “what this means” panels — term meaning (e.g. *bc* = behenchod) and **what the offender implies**, driven by `ai_models/configs/abuse_term_glossary.json`
 - **4-level severity**: LOW → MEDIUM → HIGH → CRITICAL
 - **Confidence scoring**: 0–100 composite risk score
-- **Real-time processing**: < 500ms per comment analysis
+- **Reclassify crawl window**: Re-run classifier on comments from a crawl log after lexicon updates (`POST /api/v1/crawlers/logs/{log_id}/reclassify`)
 
 ### 📡 Multi-Platform Monitoring
 | Platform | Comments | Replies | DM Channels | Public Groups |
@@ -58,13 +63,30 @@ It combines **real-time social media crawling**, **multilingual AI abuse detecti
 - SHA-256 file integrity verification
 - Organized storage: `platform/year/month/day/`
 - Screenshot watermarking with timestamp + evidence ID
+- **Evidence Feed** with category badges, bold abusive comment text, lexicon-highlight styling, and contextual explanation blocks
+- **Backfill abuse categories** (one-click): Updates `abuse_categories`, lexicon flags, and explanations on all stored evidence (`POST /api/v1/evidence/backfill-categories`, Analyst/Admin)
+
+### 📡 Instagram & Historical Crawling (Live Mode)
+- **Live mode only** — no demo/synthetic crawl path in production UI
+- **Session-based Instagram auth**: Connect via visible browser login; session saved to `storage/sessions/instagram_state.json` (no password stored in Settings when using connect flow)
+- **Historical post crawl**: Opens posts one-by-one, expands “View more comments”, scrolls for full threads
+- **Incremental / resumable checkpoints** per target (`target_crawl_checkpoints` migration `003_target_crawl_checkpoints.sql`) — stops at last-seen comment to avoid re-processing
+- **Reset crawl state**: Clear checkpoints and optionally forget stored comments (`POST /api/v1/targets/reset-crawl-state`, `reset-crawl-state-all`)
+- Tunable via `.env`: `HISTORICAL_CRAWL_MAX_POSTS`, `HISTORICAL_CRAWL_MAX_COMMENTS_PER_POST`, `HISTORICAL_CRAWL_COMMENT_EXPAND_ROUNDS`, etc.
+
+### 🖥️ Operations & Monitoring UI
+- **Live Monitoring**: Crawl logs with human-readable timestamps (date · time · duration)
+- **Crawl log results**: Abusive evidence captured per run with categories, explanations, and screenshot proof
+- **Clear old crawl errors** from the monitoring dashboard
+- **Settings**: Instagram Connect / Verify / Disconnect; ML classifier toggles; hydration-safe role display
 
 ### 📊 Intelligence Dashboard
 - Real-time incident feed (WebSocket)
 - Platform analytics with Recharts
-- Repeat offender profiles + timeline
+- Repeat offender profiles + timeline (dossier includes abuse categories & explanations)
 - Regional threat distribution maps
 - CRITICAL alert system with sound notifications
+- **Abuse UX**: `Abusive` + category chips; **bold** comment text; stronger red styling for **lexicon** matches
 
 ### 📄 Export & Reporting
 - **Excel reports**: Multi-sheet with screenshots (openpyxl)
@@ -168,6 +190,18 @@ Dashboard:  http://localhost:3000
 API Docs:   http://localhost:8000/docs
 ```
 
+### 7. Instagram session (live crawl)
+1. Open **Settings** → **Connect Instagram** (browser login).
+2. **Verify session** after login.
+3. Add targets and run crawl from **Live Monitoring** or **Targets**.
+
+### 8. Abuse categories on existing evidence
+After upgrading or changing the lexicon, open **Evidence Feed** → **Backfill abuse categories** (Analyst/Admin), or call:
+```bash
+curl -X POST http://localhost:8000/api/v1/evidence/backfill-categories \
+  -H "Authorization: Bearer <token>"
+```
+
 **Default credentials:**
 ```
 Email:    admin@patrol.local
@@ -186,11 +220,15 @@ PATROL/
 ├── docker-compose.yml
 ├── .env.example
 ├── backend/              ← FastAPI Python backend
+│   ├── ai/               ← Classifier, lexicon, abuse categories & explanations
+│   ├── crawlers/         ← Instagram historical crawl, pipeline, checkpoints
+│   └── database/migrations/  ← incl. 003_target_crawl_checkpoints.sql
 ├── frontend/             ← Next.js dashboard
+│   └── src/components/abuse/  ← Category badges, explanation panel, bold comment text
 ├── docs/                 ← All documentation
-├── scripts/              ← Setup & utility scripts
-├── storage/              ← Evidence, screenshots, exports
-├── ai_models/            ← Downloaded model cache
+├── scripts/              ← Setup & utility scripts (e.g. start-backend.ps1)
+├── storage/              ← Evidence, screenshots, Instagram sessions
+├── ai_models/configs/    ← abuse_lexicon.json, abuse_term_glossary.json
 └── tests/                ← Unit, integration, E2E
 ```
 
@@ -213,16 +251,31 @@ PATROL/
 
 ---
 
+## 🔌 Notable API Endpoints (Live Ops)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/settings/crawler/connect-instagram` | Browser login → save session |
+| `POST` | `/api/v1/settings/crawler/verify-instagram-session` | Validate saved session |
+| `POST` | `/api/v1/crawlers/logs/{log_id}/reclassify` | Re-run abuse classifier on crawl window |
+| `POST` | `/api/v1/evidence/backfill-categories` | Backfill categories + explanations on all evidence |
+| `POST` | `/api/v1/targets/reset-crawl-state` | Clear checkpoints / optional forget comments |
+| `GET` | `/api/v1/crawlers/logs/{log_id}/results` | Evidence from a crawl run (categories + explanations) |
+
+---
+
 ## 🗺️ Roadmap
 
 ### MVP (Current)
 - [x] Project architecture & scaffolding
-- [ ] Database schema + authentication
-- [ ] Platform crawlers (Instagram, Twitter, Facebook, Threads, Telegram)
-- [ ] Hindi + Hinglish + English AI abuse detection
-- [ ] Evidence collection + screenshot engine
-- [ ] Real-time intelligence dashboard
-- [ ] PDF + Excel report generation
+- [x] Database schema + authentication
+- [x] Instagram live crawler + session auth + historical crawl with checkpoints
+- [x] Hindi + Hinglish + English abuse detection (lexicon + optional ML)
+- [x] Abuse category labels + investigator explanations + Evidence Feed UX
+- [x] Evidence collection + screenshot engine
+- [x] Real-time intelligence dashboard + Live Monitoring logs
+- [ ] Platform crawlers (Twitter, Facebook, Threads, Telegram) — beyond Instagram patrol
+- [ ] PDF + Excel report generation (partial / in progress)
 
 ### Phase 2 (Post-MVP)
 - [ ] Face recognition for accused profiles

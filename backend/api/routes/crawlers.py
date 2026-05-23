@@ -7,20 +7,25 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.crawler import (
+    CrawlLogEvidenceItem,
+    CrawlLogResultsResponse,
     CrawlResultSummary,
     CrawlTriggerResponse,
     CrawlerStatusResponse,
     MonitoringLogItem,
     PlatformPatrolInfo,
+    RunningCrawlInfo,
 )
 from auth.middleware import get_current_user
-from auth.rbac import require_analyst
+from auth.rbac import require_admin, require_analyst
 from configs.settings import settings
 from services import system_settings as app_settings
-from crawlers.pipeline import run_crawl_for_target, run_crawl_all_active
+from crawlers.pipeline import reclassify_log_comments, run_crawl_for_target, run_crawl_all_active
 from crawlers.registry import platform_catalog, supported_platforms
 from database.connection import get_session
-from database.models import MonitoringLog, TargetAccount, User
+from api.helpers.evidence_abuse import apply_evidence_abuse_fields
+from database.models import AIResult, AccusedProfile, EvidenceReport, MonitoringLog, TargetAccount, User
+from crawlers.crawl_state import list_running
 from task_queue.producer import is_redis_available
 from task_queue.scheduler import get_scheduler_state, request_crawl_stop
 from task_queue.tasks import schedule_crawl_all, schedule_crawl_target
@@ -98,7 +103,9 @@ async def crawler_status(
         redis_enabled=is_redis_available(),
         scheduler_enabled=settings.CRAWLER_SCHEDULER_ENABLED,
         crawl_interval_seconds=settings.CRAWL_INTERVAL_SECONDS,
-        demo_mode=app_settings.get_crawler_demo_mode(),
+        mode="live",
+        instagram_credentials_configured=app_settings.instagram_auth_configured(),
+        running_targets=[RunningCrawlInfo(**r) for r in list_running()],
         scheduler_is_running=bool(sched.get("is_running")),
         scheduler_last_run_at=sched.get("last_run_at"),
         scheduler_last_run_status=sched.get("last_run_status"),
@@ -161,7 +168,36 @@ async def run_crawl_sync(
     try:
         summary = await run_crawl_for_target(session, target_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        msg = str(exc)
+        code = (
+            status.HTTP_409_CONFLICT
+            if "already running" in msg.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=msg) from exc
+    return CrawlResultSummary(**summary)
+
+
+@router.post("/run/{target_id}/historical", response_model=CrawlResultSummary)
+async def run_historical_crawl_sync(
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+) -> CrawlResultSummary:
+    """
+    Deep crawl: scroll older posts on the profile and collect comments on each post.
+    Instagram only (other platforms fall back to a regular crawl).
+    """
+    try:
+        summary = await run_crawl_for_target(session, target_id, historical=True)
+    except ValueError as exc:
+        msg = str(exc)
+        code = (
+            status.HTTP_409_CONFLICT
+            if "already running" in msg.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=msg) from exc
     return CrawlResultSummary(**summary)
 
 
@@ -213,6 +249,31 @@ async def crawl_job_status(
     return get_scheduler_state()
 
 
+@router.post("/logs/clear-errors")
+async def clear_crawl_error_logs(
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_admin),
+    all_failed: bool = Query(
+        False,
+        description="If true, remove every failed log. Default: only legacy login-timeout errors.",
+    ),
+) -> dict:
+    """
+    Remove stale failed crawl logs from the UI (does not stop running crawlers).
+    """
+    from sqlalchemy import delete
+
+    q = delete(MonitoringLog).where(MonitoringLog.success.is_(False))
+    if not all_failed:
+        q = q.where(
+            MonitoringLog.error_message.isnot(None),
+            MonitoringLog.error_message.contains("Page.fill"),
+        )
+    result = await session.execute(q)
+    await session.commit()
+    removed = result.rowcount or 0
+    return {"removed": removed, "message": f"Cleared {removed} failed log(s)."}
+
 @router.get("/logs", response_model=list[MonitoringLogItem])
 async def list_crawl_logs(
     limit: int = Query(20, ge=1, le=100),
@@ -220,6 +281,91 @@ async def list_crawl_logs(
     _user: User = Depends(get_current_user),
 ) -> list[MonitoringLogItem]:
     result = await session.execute(
-        select(MonitoringLog).order_by(MonitoringLog.started_at.desc()).limit(limit)
+        select(MonitoringLog, TargetAccount.username)
+        .outerjoin(TargetAccount, MonitoringLog.target_id == TargetAccount.id)
+        .order_by(MonitoringLog.started_at.desc())
+        .limit(limit)
     )
-    return [MonitoringLogItem.model_validate(row) for row in result.scalars().all()]
+    items: list[MonitoringLogItem] = []
+    for log, target_username in result.all():
+        item = MonitoringLogItem.model_validate(log)
+        item.target_username = target_username
+        items.append(item)
+    return items
+
+
+@router.get("/logs/{log_id}/results", response_model=CrawlLogResultsResponse)
+async def crawl_log_results(
+    log_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(get_current_user),
+) -> CrawlLogResultsResponse:
+    """Evidence and offenders captured during a specific crawl run."""
+    log_row = await session.execute(
+        select(MonitoringLog, TargetAccount.username)
+        .outerjoin(TargetAccount, MonitoringLog.target_id == TargetAccount.id)
+        .where(MonitoringLog.id == log_id)
+    )
+    row = log_row.first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crawl log not found")
+    log, target_username = row
+
+    evidence_q = (
+        select(EvidenceReport, AccusedProfile.username, AIResult)
+        .outerjoin(AccusedProfile, EvidenceReport.accused_id == AccusedProfile.id)
+        .outerjoin(AIResult, EvidenceReport.ai_result_id == AIResult.id)
+    )
+    if log.target_id and log.started_at:
+        evidence_q = evidence_q.where(EvidenceReport.target_id == log.target_id)
+        if log.completed_at:
+            evidence_q = evidence_q.where(
+                EvidenceReport.capture_timestamp >= log.started_at,
+                EvidenceReport.capture_timestamp <= log.completed_at,
+            )
+        else:
+            evidence_q = evidence_q.where(EvidenceReport.capture_timestamp >= log.started_at)
+    elif log.target_id:
+        evidence_q = evidence_q.where(EvidenceReport.target_id == log.target_id)
+
+    evidence_q = evidence_q.order_by(EvidenceReport.capture_timestamp.desc())
+    ev_result = await session.execute(evidence_q)
+    evidence_items: list[CrawlLogEvidenceItem] = []
+    for ev, accused_username, ai_row in ev_result.all():
+        item = CrawlLogEvidenceItem(
+            evidence_id=ev.evidence_id,
+            uuid=ev.id,
+            accused_username=accused_username,
+            severity=ev.severity_level.value,
+            risk_score=ev.risk_score,
+            comment_preview=(ev.comment_text or "")[:200],
+            screenshot_path=ev.screenshot_path,
+        )
+        apply_evidence_abuse_fields(item, ev, ai_row)
+        evidence_items.append(item)
+
+    return CrawlLogResultsResponse(
+        log_id=log.id,
+        target_id=log.target_id,
+        target_username=target_username,
+        platform=log.platform.value,
+        success=log.success,
+        comments_new=log.comments_new,
+        abusive_detected=log.abusive_detected,
+        started_at=log.started_at,
+        completed_at=log.completed_at,
+        evidence=evidence_items,
+    )
+
+
+@router.post("/logs/{log_id}/reclassify")
+async def reclassify_crawl_log(
+    log_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+) -> dict:
+    """Re-run abuse detection on comments from this crawl (e.g. after lexicon update)."""
+    try:
+        return await reclassify_log_comments(session, log_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

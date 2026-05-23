@@ -9,13 +9,37 @@ Usage:
     print(settings.DATABASE_URL)
 """
 
+import json
 from pathlib import Path
-from typing import List, Optional
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
+from typing import Annotated, List, Optional
+
+from pydantic import BeforeValidator, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Repo root (SocialMediaMonitoringTool/) — two levels up from backend/configs/
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _parse_allowed_origins(value: object) -> List[str]:
+    """Accept JSON array or comma-separated URLs (Render-friendly)."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            raise ValueError(
+                "ALLOWED_ORIGINS cannot be empty. Example: "
+                '["https://your-app.vercel.app"] or https://your-app.vercel.app'
+            )
+        if raw.startswith("["):
+            parsed = json.loads(raw)
+            if not isinstance(parsed, list):
+                raise ValueError("ALLOWED_ORIGINS JSON must be an array of strings")
+            return [str(item).strip() for item in parsed if str(item).strip()]
+        return [part.strip() for part in raw.split(",") if part.strip()]
+    raise TypeError(f"ALLOWED_ORIGINS must be a string or list, got {type(value).__name__}")
 
 
 class Settings(BaseSettings):
@@ -25,7 +49,11 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=str(_PROJECT_ROOT / ".env"),
+        # Root .env first; backend/.env overrides (common on EC2 when cwd is backend/)
+        env_file=(
+            str(_PROJECT_ROOT / ".env"),
+            str(_PROJECT_ROOT / "backend" / ".env"),
+        ),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
@@ -62,7 +90,12 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 480
 
     # ── CORS ─────────────────────────────────────────────────
-    ALLOWED_ORIGINS: List[str] = [
+    # NoDecode: Render env UI often uses plain URLs, not JSON arrays.
+    ALLOWED_ORIGINS: Annotated[
+        List[str],
+        NoDecode,
+        BeforeValidator(_parse_allowed_origins),
+    ] = [
         "http://localhost:3000",
         "http://localhost:80",
         "http://127.0.0.1:3000",
@@ -100,10 +133,19 @@ class Settings(BaseSettings):
     # ── Crawler ───────────────────────────────────────────────
     CRAWLER_HEADLESS: bool = True
     CRAWLER_TIMEOUT_MS: int = 30000
-    CRAWLER_DEMO_MODE: bool = True  # Synthetic comments when no platform credentials
+    CRAWLER_DEMO_MODE: bool = False  # Live-only; synthetic demo mode removed
     CRAWLER_SCHEDULER_ENABLED: bool = True  # APScheduler crawl-all on startup
     MAX_CONCURRENT_BROWSERS: int = 3
     CRAWL_INTERVAL_SECONDS: int = 300  # 5 minutes between crawl cycles; 0 = disabled
+    # Historical crawl: scroll profile for older posts, then comments per post
+    HISTORICAL_CRAWL_MAX_POSTS: int = 12
+    HISTORICAL_CRAWL_MAX_COMMENTS_PER_POST: int = 80
+    HISTORICAL_CRAWL_PROFILE_SCROLLS: int = 8
+    # Comment loading: higher = more complete but slower (clicks "View more" repeatedly)
+    HISTORICAL_CRAWL_COMMENT_EXPAND_ROUNDS: int = 15
+    HISTORICAL_CRAWL_COMMENT_SCROLL_ROUNDS: int = 10
+    HISTORICAL_CRAWL_POST_DELAY_SEC: float = 2.0
+    HISTORICAL_CRAWL_PROFILE_SCROLL_DELAY_SEC: float = 1.5
     WEEKLY_REPORT_EXPORT_ENABLED: bool = True
     WEEKLY_REPORT_DAY: str = "mon"
     WEEKLY_REPORT_HOUR: int = 6

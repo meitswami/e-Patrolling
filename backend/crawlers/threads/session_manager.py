@@ -25,4 +25,4 @@ class ThreadsSessionManager:
         return SESSION_FILE.exists()
 
     def credentials_configured(self) -> bool:
-        return app_settings.instagram_credentials_configured()
+        return app_settings.instagram_auth_configured()

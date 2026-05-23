@@ -104,10 +104,7 @@ export default function DashboardPage() {
       >
       {crawlerStatus?.platforms && crawlerStatus.platforms.length > 0 && (
         <div className="mb-6">
-          <PlatformMonitorGrid
-            platforms={crawlerStatus.platforms}
-            demoMode={crawlerStatus.demo_mode}
-          />
+          <PlatformMonitorGrid platforms={crawlerStatus.platforms} />
         </div>
       )}
 

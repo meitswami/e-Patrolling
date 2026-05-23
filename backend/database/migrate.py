@@ -29,3 +29,4 @@ async def apply_migration_file(engine: AsyncEngine, filename: str) -> None:
 async def run_pending_migrations(engine: AsyncEngine) -> None:
     """Apply incremental migrations safe on every startup."""
     await apply_migration_file(engine, "002_osint_evidence.sql")
+    await apply_migration_file(engine, "003_target_crawl_checkpoints.sql")

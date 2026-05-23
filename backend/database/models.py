@@ -302,6 +302,25 @@ class RepeatOffender(Base):
     )
 
 
+class TargetCrawlCheckpoint(Base):
+    """Persistent per-target crawl position (posts + comment IDs) for resume/incremental."""
+
+    __tablename__ = "target_crawl_checkpoints"
+
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("target_accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    platform: Mapped[PlatformType] = mapped_column(_PLATFORM_PG, nullable=False)
+    profile_username: Mapped[str] = mapped_column(String(255), nullable=False)
+    state: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    posts_completed: Mapped[int] = mapped_column(Integer, default=0)
+    comments_indexed: Mapped[int] = mapped_column(Integer, default=0)
+    last_crawl_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class MonitoringLog(Base):
     __tablename__ = "monitoring_logs"
 
@@ -318,6 +337,7 @@ class MonitoringLog(Base):
     pages_crawled: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
+    crawl_progress: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 

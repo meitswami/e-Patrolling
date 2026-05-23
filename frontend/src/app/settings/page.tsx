@@ -6,6 +6,8 @@ import { AppShell } from '@/components/layout/AppShell'
 import { SystemStatusBar } from '@/components/layout/SystemStatusBar'
 import { PlatformIcon } from '@/components/platforms/PlatformIcon'
 import {
+  connectInstagramSession,
+  disconnectInstagramSession,
   getAiSettings,
   getAiStatus,
   getCrawlerSettings,
@@ -13,8 +15,10 @@ import {
   getHealth,
   updateAiSettings,
   updateCrawlerSettings,
+  validateInstagramCredentials,
   type AiStatus,
   type CrawlerSettings,
+  type InstagramValidationResult,
 } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { connectDashboardWs, type WsMessage } from '@/lib/ws'
@@ -24,17 +28,14 @@ const PASSWORD_PLACEHOLDER = '********'
 
 export default function SettingsPage() {
   const router = useRouter()
-  const user = getUser()
-  const isAdmin = user?.role === 'ADMIN'
+  const [mounted, setMounted] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const [ai, setAi] = useState<AiStatus | null>(null)
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [wsConnected, setWsConnected] = useState(false)
   const [crawler, setCrawler] = useState<CrawlerSettings | null>(null)
-  const [demoMode, setDemoMode] = useState(true)
-  const [igUser, setIgUser] = useState('')
-  const [igPassword, setIgPassword] = useState('')
   const [fbEmail, setFbEmail] = useState('')
   const [fbPassword, setFbPassword] = useState('')
   const [screenshotMode, setScreenshotMode] = useState<'pillow' | 'playwright' | 'both'>('both')
@@ -44,14 +45,28 @@ export default function SettingsPage() {
   const [savingAi, setSavingAi] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [connecting, setConnecting] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [connectionResult, setConnectionResult] = useState<InstagramValidationResult | null>(
+    null,
+  )
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
+  async function refreshCrawlerSettings() {
+    const crawlerSettings = await getCrawlerSettings()
+    setCrawler(crawlerSettings)
+  }
+
   useEffect(() => {
+    setMounted(true)
     if (!isAuthenticated()) {
       router.replace('/login')
       return
     }
+    const admin = getUser()?.role === 'ADMIN'
+    setIsAdmin(admin)
+
     async function load() {
       try {
         const [aiStatus, apiHealth, dashboard] = await Promise.all([
@@ -62,20 +77,15 @@ export default function SettingsPage() {
         setAi(aiStatus)
         setHealth(apiHealth)
         setStats(dashboard)
-        if (isAdmin) {
+        if (admin) {
           const [crawlerSettings, aiSettings] = await Promise.all([
             getCrawlerSettings(),
             getAiSettings(),
           ])
           setCrawler(crawlerSettings)
-          setDemoMode(crawlerSettings.crawler_demo_mode)
-          setIgUser(crawlerSettings.instagram_username)
           setScreenshotMode(
             crawlerSettings.evidence_screenshot_mode as 'pillow' | 'playwright' | 'both',
           )
-          if (crawlerSettings.instagram_password_set) {
-            setIgPassword(PASSWORD_PLACEHOLDER)
-          }
           setFbEmail(crawlerSettings.facebook_email)
           if (crawlerSettings.facebook_password_set) {
             setFbPassword(PASSWORD_PLACEHOLDER)
@@ -100,7 +110,7 @@ export default function SettingsPage() {
     })
 
     return disconnect
-  }, [router, isAdmin])
+  }, [router])
 
   async function handleSave(e: FormEvent) {
     e.preventDefault()
@@ -109,29 +119,26 @@ export default function SettingsPage() {
     setSuccess(null)
     try {
       const updated = await updateCrawlerSettings({
-        crawler_demo_mode: demoMode,
-        instagram_username: igUser.trim() || undefined,
-        instagram_password:
-          igPassword && igPassword !== PASSWORD_PLACEHOLDER ? igPassword : undefined,
         facebook_email: fbEmail.trim() || undefined,
         facebook_password:
           fbPassword && fbPassword !== PASSWORD_PLACEHOLDER ? fbPassword : undefined,
         evidence_screenshot_mode: screenshotMode,
       })
       setCrawler(updated)
-      if (updated.instagram_password_set) {
-        setIgPassword(PASSWORD_PLACEHOLDER)
-      }
       if (updated.facebook_password_set) {
         setFbPassword(PASSWORD_PLACEHOLDER)
       }
-      setSuccess('Crawler settings saved to database.')
+      setSuccess('Crawler settings saved.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save settings')
     } finally {
       setSaving(false)
     }
   }
+
+  const igConnected =
+    crawler?.instagram_session_connected ?? crawler?.instagram_auth_configured ?? false
+  const igUsername = crawler?.instagram_username?.trim()
 
   return (
     <AppShell title="Settings" subtitle="AI models and patrol configuration">
@@ -154,68 +161,141 @@ export default function SettingsPage() {
         />
       )}
 
-      {!isAdmin && (
-        <p className="rounded-lg border border-patrol-border bg-patrol-card px-4 py-3 text-sm text-patrol-muted">
-          Crawler configuration requires an administrator account. Contact your admin to change
-          Instagram credentials or demo mode.
-        </p>
-      )}
-
-      {isAdmin && loading && (
+      {!mounted && (
         <p className="text-sm text-patrol-muted">Loading settings…</p>
       )}
 
-      {isAdmin && !loading && (
+      {mounted && !isAdmin && (
+        <p className="rounded-lg border border-patrol-border bg-patrol-card px-4 py-3 text-sm text-patrol-muted">
+          Crawler configuration requires an administrator account. Contact your admin to connect
+          Instagram.
+        </p>
+      )}
+
+      {mounted && isAdmin && loading && (
+        <p className="text-sm text-patrol-muted">Loading settings…</p>
+      )}
+
+      {mounted && isAdmin && !loading && (
         <form onSubmit={handleSave} className="mb-8 space-y-6">
           <section className="rounded-xl border border-patrol-border bg-patrol-card p-5">
             <h2 className="font-mono text-patrol-accent">Crawler platforms</h2>
             <p className="mt-1 text-xs text-patrol-muted">
-              Stored in <code className="text-patrol-text">system_settings</code> table
-              {crawler?.source === 'database' ? ' (active)' : ' — using .env until saved'}
+              Instagram uses saved browser session cookies (no password stored in PATROL).
             </p>
 
-            <label className="mt-4 flex cursor-pointer items-center gap-3 text-sm">
-              <input
-                type="checkbox"
-                checked={demoMode}
-                onChange={(e) => setDemoMode(e.target.checked)}
-                className="h-4 w-4 rounded border-patrol-border"
-              />
-              <span className="text-patrol-text">
-                Demo mode <span className="text-patrol-muted">(synthetic comments, no browser)</span>
-              </span>
-            </label>
+            <p className="mt-3 inline-flex items-center gap-2 rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1.5 text-sm text-patrol-accent">
+              Live mode — real browser crawls only
+            </p>
 
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="block text-sm">
-                <span className="inline-flex items-center gap-1.5 text-patrol-muted">
-                  <PlatformIcon platform="instagram" size="sm" />
-                  Instagram username
-                </span>
-                <input
-                  value={igUser}
-                  onChange={(e) => setIgUser(e.target.value)}
-                  autoComplete="off"
-                  className="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
-                  placeholder="your_instagram_handle"
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-patrol-muted">Instagram password</span>
-                <input
-                  type="password"
-                  value={igPassword}
-                  onChange={(e) => setIgPassword(e.target.value)}
-                  autoComplete="new-password"
-                  className="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
-                  placeholder={
-                    crawler?.instagram_password_set ? PASSWORD_PLACEHOLDER : 'Enter password'
-                  }
-                />
-                <span className="mt-1 block text-xs text-patrol-muted">
-                  Leave as {PASSWORD_PLACEHOLDER} to keep the current password
-                </span>
-              </label>
+            <div className="mt-4 rounded-lg border border-patrol-border bg-patrol-surface/50 p-4">
+              <div className="flex items-center gap-2 font-mono text-sm text-patrol-accent">
+                <PlatformIcon platform="instagram" size="sm" />
+                Instagram
+              </div>
+              <p className="mt-2 text-sm text-patrol-muted">
+                {igConnected
+                  ? igUsername
+                    ? `Connected as @${igUsername} — session cookies saved on server.`
+                    : 'Connected — session cookies saved on server.'
+                  : 'Not connected. Click below to open Instagram in a browser and log in manually.'}
+              </p>
+              <p className="mt-2 text-xs text-patrol-muted">
+                A Chrome/Edge window opens on this machine (where the API runs). Log in on
+                instagram.com, complete 2FA if asked, then return here when your feed loads.
+              </p>
+
+              {connectionResult && (
+                <p
+                  className={`mt-3 whitespace-pre-wrap rounded-lg border px-3 py-2 text-sm ${
+                    connectionResult.success
+                      ? 'border-green-500/40 bg-green-500/10 text-green-400'
+                      : 'border-red-500/40 bg-red-500/10 text-red-400'
+                  }`}
+                >
+                  {connectionResult.message}
+                </p>
+              )}
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  disabled={connecting || testing}
+                  onClick={async () => {
+                    setConnecting(true)
+                    setError(null)
+                    setSuccess(null)
+                    setConnectionResult(null)
+                    try {
+                      setSuccess(
+                        'Browser opening… Log in on Instagram in that window (up to 5 minutes).',
+                      )
+                      const result = await connectInstagramSession()
+                      setConnectionResult(result)
+                      await refreshCrawlerSettings()
+                      if (result.success) {
+                        setSuccess(result.message)
+                        setError(null)
+                      } else {
+                        setError(result.message)
+                        setSuccess(null)
+                      }
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Connect failed')
+                      setSuccess(null)
+                    } finally {
+                      setConnecting(false)
+                    }
+                  }}
+                  className="rounded-lg bg-patrol-accent px-4 py-2 text-sm font-medium text-patrol-bg disabled:opacity-50"
+                >
+                  {connecting ? 'Waiting for login…' : 'Connect Instagram'}
+                </button>
+                <button
+                  type="button"
+                  disabled={testing || connecting || !igConnected}
+                  onClick={async () => {
+                    setTesting(true)
+                    setError(null)
+                    setConnectionResult(null)
+                    try {
+                      const result = await validateInstagramCredentials()
+                      setConnectionResult(result)
+                      if (result.success) {
+                        setSuccess(result.message)
+                      } else {
+                        setError(result.message)
+                      }
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Session check failed')
+                    } finally {
+                      setTesting(false)
+                    }
+                  }}
+                  className="rounded-lg border border-patrol-accent/50 px-4 py-2 text-sm text-patrol-accent disabled:opacity-50"
+                >
+                  {testing ? 'Checking…' : 'Verify session'}
+                </button>
+                <button
+                  type="button"
+                  disabled={connecting || !igConnected}
+                  onClick={async () => {
+                    setError(null)
+                    setSuccess(null)
+                    try {
+                      const result = await disconnectInstagramSession()
+                      setConnectionResult(result)
+                      await refreshCrawlerSettings()
+                      setSuccess(result.message)
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Disconnect failed')
+                    }
+                  }}
+                  className="rounded-lg border border-red-500/40 px-4 py-2 text-sm text-red-400 disabled:opacity-50"
+                >
+                  Disconnect
+                </button>
+              </div>
             </div>
 
             <h3 className="mt-6 flex items-center gap-2 font-mono text-sm text-patrol-accent">
@@ -251,7 +331,7 @@ export default function SettingsPage() {
               Threads
             </h3>
             <p className="mt-1 text-xs text-patrol-muted">
-              Uses Instagram login above (Meta SSO on threads.net).
+              Uses the same Instagram session cookies above.
             </p>
 
             <label className="mt-4 block text-sm">
@@ -270,16 +350,18 @@ export default function SettingsPage() {
             </label>
 
             <p className="mt-3 text-xs text-patrol-muted">
-              Live crawls need demo mode off, platform credentials, and Playwright on the server.
+              Live Instagram crawls require a connected session and Playwright on the server.
             </p>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="mt-5 rounded-lg bg-patrol-accent px-4 py-2 text-sm font-medium text-patrol-bg disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save crawler settings'}
-            </button>
+            <div className="mt-5">
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-lg border border-patrol-accent/50 px-4 py-2 text-sm text-patrol-accent disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save Facebook & screenshot settings'}
+              </button>
+            </div>
           </section>
         </form>
       )}
@@ -295,7 +377,7 @@ export default function SettingsPage() {
               <li>HF token configured: {ai.hf_api_configured ? 'Yes' : 'No'}</li>
               <li>Abuse threshold: {ai.abuse_threshold}</li>
             </ul>
-            {isAdmin && !loading && (
+            {mounted && isAdmin && !loading && (
               <div className="mt-4 space-y-3 border-t border-patrol-border pt-4">
                 <label className="flex items-center gap-3 text-sm">
                   <input

@@ -5,13 +5,11 @@ import { PlatformIcon } from '@/components/platforms/PlatformIcon'
 
 interface PlatformMonitorGridProps {
   platforms: PlatformPatrolInfo[]
-  demoMode?: boolean
   compact?: boolean
 }
 
 export function PlatformMonitorGrid({
   platforms,
-  demoMode,
   compact = false,
 }: PlatformMonitorGridProps) {
   const active = platforms.filter((p) => p.status === 'active')
@@ -23,7 +21,7 @@ export function PlatformMonitorGrid({
         <h2 className="font-mono text-sm text-patrol-accent">Patrol & monitoring</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {active.map((p) => (
-            <PlatformCard key={p.id} platform={p} demoMode={demoMode} />
+            <PlatformCard key={p.id} platform={p} />
           ))}
         </div>
       </div>
@@ -50,13 +48,7 @@ export function PlatformMonitorGrid({
   )
 }
 
-function PlatformCard({
-  platform,
-  demoMode,
-}: {
-  platform: PlatformPatrolInfo
-  demoMode?: boolean
-}) {
+function PlatformCard({ platform }: { platform: PlatformPatrolInfo }) {
   const monitoring = platform.monitoring_count > 0
 
   return (
@@ -94,12 +86,6 @@ function PlatformCard({
         <span className={monitoring ? 'text-patrol-accent' : 'text-patrol-muted'}>
           {monitoring ? 'Live monitoring' : 'No active watches'}
         </span>
-        {demoMode && (
-          <>
-            <span className="text-patrol-muted">·</span>
-            <span className="text-patrol-muted">Demo crawl</span>
-          </>
-        )}
       </div>
     </article>
   )

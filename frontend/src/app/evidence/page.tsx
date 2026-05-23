@@ -5,9 +5,12 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { PlatformLabel } from '@/components/platforms/PlatformLabel'
+import { AbuseCategoryBadges } from '@/components/abuse/AbuseCategoryBadges'
+import { AbuseExplanationPanel } from '@/components/abuse/AbuseExplanationPanel'
+import { AbusiveCommentText } from '@/components/abuse/AbusiveCommentText'
 import { API_BASE_URL, SEVERITY_CONFIG } from '@/lib/constants'
-import { listEvidence } from '@/lib/api'
-import { isAuthenticated } from '@/lib/auth'
+import { backfillEvidenceCategories, listEvidence } from '@/lib/api'
+import { getUser, isAuthenticated } from '@/lib/auth'
 import type { EvidenceListItem, SeverityLevel } from '@/types'
 
 function evidenceImageUrl(screenshotPath: string | null): string | null {
@@ -26,6 +29,10 @@ export default function EvidencePage() {
   const [search, setSearch] = useState('')
   const [severity, setSeverity] = useState('')
   const [escalatedOnly, setEscalatedOnly] = useState(false)
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null)
+  const canBackfill =
+    getUser()?.role === 'ADMIN' || getUser()?.role === 'ANALYST'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -91,7 +98,36 @@ export default function EvidencePage() {
         >
           Apply
         </button>
+        {canBackfill && (
+          <button
+            type="button"
+            disabled={backfilling}
+            onClick={async () => {
+              setBackfilling(true)
+              setBackfillMsg(null)
+              setError(null)
+              try {
+                const res = await backfillEvidenceCategories()
+                setBackfillMsg(res.message)
+                await load()
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Backfill failed')
+              } finally {
+                setBackfilling(false)
+              }
+            }}
+            className="rounded-lg border border-patrol-border px-4 py-2 text-sm text-patrol-text hover:border-patrol-accent/40 disabled:opacity-50"
+          >
+            {backfilling ? 'Backfilling…' : 'Backfill abuse categories'}
+          </button>
+        )}
       </div>
+
+      {backfillMsg && (
+        <p className="mb-4 rounded-lg border border-patrol-accent/30 bg-patrol-accent/10 px-4 py-3 text-sm text-patrol-accent">
+          {backfillMsg}
+        </p>
+      )}
 
       {error && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
@@ -143,6 +179,7 @@ export default function EvidencePage() {
                     >
                       {item.evidence_id}
                     </Link>
+                    <AbuseCategoryBadges categories={item.abuse_categories ?? []} />
                     <span className={`rounded border px-2 py-0.5 ${sev.className}`}>{sev.label}</span>
                     {item.is_escalated && (
                       <span className="rounded border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-red-400">
@@ -152,7 +189,14 @@ export default function EvidencePage() {
                     <PlatformLabel platform={item.platform} size="sm" className="text-patrol-muted" />
                     <span className="text-patrol-muted">Risk {item.risk_score}</span>
                   </div>
-                  <p className="mt-2 line-clamp-3 text-sm text-patrol-text">{item.comment_text}</p>
+                  <AbusiveCommentText
+                    className="mt-2"
+                    text={item.comment_text}
+                    abusive={item.is_abusive}
+                    lexiconMatch={item.is_lexicon_match}
+                    lineClamp
+                  />
+                  <AbuseExplanationPanel explanations={item.abuse_explanations ?? []} />
                   <p className="mt-2 text-xs text-patrol-muted">
                     Target: {item.target_username ?? '—'} · Accused:{' '}
                     {item.accused_username ? (
