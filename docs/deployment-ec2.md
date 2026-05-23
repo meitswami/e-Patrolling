@@ -4,7 +4,8 @@
 
 | Symptom | Likely cause |
 |--------|----------------|
-| `[Errno 101] Network is unreachable` on login | EC2 tries **IPv6** to Supabase (no IPv6 egress); HTTPS works but port 5432 on AAAA fails — set `DATABASE_FORCE_IPV4=true` (default) or test `nc -4 -zv db....supabase.co 5432` |
+| `[Errno 101] Network is unreachable` on login | **`db.*.supabase.co` is IPv6-only**; most EC2 VPCs have no IPv6 egress. Use **Session pooler** URI (IPv4), not direct `db.` host |
+| `nc -4` → *No address associated with hostname* | Normal for direct host — there is **no IPv4 A record**. Switch to `aws-0-REGION.pooler.supabase.com` |
 | Browser CORS error on `epatrol-api.duckdns.org` | `ALLOWED_ORIGINS` missing Vercel URL, or API returns 502/500 without reaching FastAPI |
 | "Cannot reach API" on login page | Reverse proxy not running, wrong port, or security group blocks 443 |
 
@@ -25,28 +26,40 @@ Settings loads **both** (backend overrides root):
 
 Copy values from your **local** machine’s working `.env` (same Supabase project), or from Supabase Dashboard → Database → connection string (add `+asyncpg` after `postgresql`).
 
-## 2. DATABASE_URL on EC2
+## 2. DATABASE_URL on EC2 — use the pooler (not `db.*.supabase.co`)
 
-Prefer the **direct** Supabase host (same as local dev):
+Supabase **direct** host `db.<project>.supabase.co` resolves to **IPv6 only**. Typical EC2 VPCs cannot reach it (`errno 101` or `nc -4` → *No address associated with hostname*).
+
+### Fix (recommended)
+
+1. Supabase Dashboard → your project → **Connect** → **ORMs** or **Connection string**
+2. Copy **Session pooler** (port **5432**) — not “Direct connection”
+3. Change the prefix to `postgresql+asyncpg://`
+4. Username is **`postgres.whzmtzatkxgiomwlwkgy`** (not plain `postgres`)
+
+Example (replace `REGION` with yours from the dashboard, e.g. `ap-south-1`):
 
 ```env
-DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@db.whzmtzatkxgiomwlwkgy.supabase.co:5432/postgres
+DATABASE_URL=postgresql+asyncpg://postgres.whzmtzatkxgiomwlwkgy:YOUR_PASSWORD@aws-0-ap-south-1.pooler.supabase.com:5432/postgres
 DATABASE_SSL=true
+ENVIRONMENT=production
 ```
 
-If you use the **pooler** URI from the Supabase dashboard, use the full hostname and ensure the password is URL-encoded. A truncated line (`...postg` instead of `postgres`) will also break auth.
-
-Test from EC2:
+Test from EC2 (pooler has IPv4):
 
 ```bash
-curl -sI https://supabase.com | head -1
-nc -4 -zv db.whzmtzatkxgiomwlwkgy.supabase.co 5432   # MUST use -4 on many EC2 VPCs
-nc -zv db.whzmtzatkxgiomwlwkgy.supabase.co 5432      # may try IPv6 and fail with errno 101
+nc -4 -zv aws-0-ap-south-1.pooler.supabase.com 5432
+curl -s http://127.0.0.1:5000/health
 ```
 
-If `nc -4` works but `nc` without `-4` fails → IPv6 routing issue (common). The app uses `DATABASE_FORCE_IPV4=true` to connect via IPv4 only.
+Expect `"database":"connected"`.
 
-If both fail with "Network is unreachable", fix VPC routing first:
+### Alternatives
+
+- Enable **IPv6 egress** on the VPC (subnet IPv6 + route `::/0`), then direct `db.` URL can work
+- Paid **IPv4 add-on** on Supabase Pro for direct connection IPv4
+
+If pooler `nc -4` fails with "Network is unreachable", fix VPC outbound routing first:
 
 - Public subnet + Internet Gateway, **or**
 - Private subnet + NAT Gateway

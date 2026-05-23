@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
     DATABASE_SSL: bool = True
     DATABASE_SSL_VERIFY: bool = False  # Set True in production; False fixes Windows dev cert issues
-    # EC2 VPCs often have no IPv6 egress; Supabase DNS returns AAAA first → Errno 101.
+    # If hostname has an IPv4 A record, use it (does not help db.*.supabase.co — use pooler on EC2).
     DATABASE_FORCE_IPV4: bool = True
 
     # ── Redis (optional until crawlers/queue are built) ─────────
