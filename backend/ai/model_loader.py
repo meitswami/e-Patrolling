@@ -1,8 +1,10 @@
 """Lazy HuggingFace model loading with graceful fallback."""
 
+import os
 from typing import Any, Optional
 
 from configs.settings import settings
+from services import system_settings as app_settings
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -11,6 +13,29 @@ _toxic_pipeline: Any = None
 _indic_pipeline: Any = None
 _load_failed = False
 _indic_load_failed = False
+_cache_configured = False
+
+
+def _ml_enabled() -> bool:
+    """Respect Settings UI (DB) with .env fallback via system_settings."""
+    return app_settings.get_use_ml_classifier()
+
+
+def _indic_enabled() -> bool:
+    return settings.USE_INDICBERT or _ml_enabled()
+
+
+def _configure_hf_cache() -> None:
+    """Point Hugging Face downloads at MODEL_CACHE_DIR when set."""
+    global _cache_configured
+    if _cache_configured:
+        return
+    cache_dir = settings.MODEL_CACHE_DIR
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("HF_HOME", str(cache_dir))
+    os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(cache_dir / "hub"))
+    os.environ.setdefault("TRANSFORMERS_CACHE", str(cache_dir / "transformers"))
+    _cache_configured = True
 
 
 def _load_toxic_pipeline() -> Any:
@@ -20,10 +45,15 @@ def _load_toxic_pipeline() -> Any:
     if _toxic_pipeline is not None:
         return _toxic_pipeline
     try:
+        _configure_hf_cache()
         from transformers import pipeline
 
         device = 0 if settings.USE_GPU else -1
-        model_id = settings.MULTILINGUAL_TOXIC_MODEL if settings.USE_MULTILINGUAL_TOXIC else settings.TOXIC_BERT_MODEL
+        model_id = (
+            settings.MULTILINGUAL_TOXIC_MODEL
+            if settings.USE_MULTILINGUAL_TOXIC
+            else settings.TOXIC_BERT_MODEL
+        )
         _toxic_pipeline = pipeline(
             "text-classification",
             model=model_id,
@@ -31,7 +61,7 @@ def _load_toxic_pipeline() -> Any:
             truncation=True,
             max_length=512,
         )
-        logger.info("Loaded toxicity model: %s", settings.TOXIC_BERT_MODEL)
+        logger.info("Loaded toxicity model: %s", model_id)
         return _toxic_pipeline
     except Exception as exc:
         _load_failed = True
@@ -46,6 +76,7 @@ def _load_indic_pipeline() -> Any:
     if _indic_pipeline is not None:
         return _indic_pipeline
     try:
+        _configure_hf_cache()
         from transformers import pipeline
 
         device = 0 if settings.USE_GPU else -1
@@ -66,20 +97,20 @@ def _load_indic_pipeline() -> Any:
 
 async def preload_models() -> None:
     """Optional startup preload."""
-    if settings.USE_ML_CLASSIFIER:
+    if _ml_enabled():
         _load_toxic_pipeline()
     if settings.USE_INDICBERT:
         _load_indic_pipeline()
-    if not settings.USE_ML_CLASSIFIER and not settings.USE_INDICBERT:
+    if not _ml_enabled() and not settings.USE_INDICBERT:
         logger.info("ML models disabled — keyword classifier only")
 
 
 def score_toxicity(text: str) -> Optional[float]:
     """
     Return toxicity probability 0–1 from toxic-bert, or None if unavailable.
-  Label 'toxic' score is used when model returns multi-label output.
+    Label 'toxic' score is used when model returns multi-label output.
     """
-    if not settings.USE_ML_CLASSIFIER or not text.strip():
+    if not _ml_enabled() or not text.strip():
         return None
 
     pipe = _load_toxic_pipeline()
@@ -90,7 +121,6 @@ def score_toxicity(text: str) -> Optional[float]:
         results = pipe(text[:512])
         if not results:
             return None
-        # toxic-bert: [{'label': 'toxic', 'score': 0.9}] or similar
         best = max(results, key=lambda r: r.get("score", 0))
         label = str(best.get("label", "")).lower()
         score = float(best.get("score", 0))
@@ -106,7 +136,7 @@ def score_toxicity(text: str) -> Optional[float]:
 
 def score_indic_abuse(text: str) -> Optional[float]:
     """Hindi/Hinglish abuse score via dehatebert-mono-indic (when enabled)."""
-    if not (settings.USE_INDICBERT or settings.USE_ML_CLASSIFIER) or not text.strip():
+    if not _indic_enabled() or not text.strip():
         return None
 
     pipe = _load_indic_pipeline()

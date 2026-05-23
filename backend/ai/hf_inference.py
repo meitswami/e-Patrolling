@@ -3,6 +3,7 @@
 from typing import Optional
 
 from configs.settings import settings
+from services import system_settings as app_settings
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -13,8 +14,11 @@ def score_via_inference_api(text: str, model_id: Optional[str] = None) -> Option
     Call HF Inference API for toxicity scoring when HUGGINGFACE_API_TOKEN is set.
     Returns probability 0–1 or None if unavailable.
     """
+    if not app_settings.get_use_hf_inference_api() or not text.strip():
+        return None
+
     token = settings.HUGGINGFACE_API_TOKEN
-    if not token or not text.strip():
+    if not token:
         return None
 
     model = model_id or settings.MULTILINGUAL_TOXIC_MODEL

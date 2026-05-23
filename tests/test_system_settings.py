@@ -32,3 +32,17 @@ def test_instagram_credentials_configured():
     ss._cache["instagram_password"] = ss.encrypt_secret("secret")
     assert ss.instagram_credentials_configured() is True
     assert ss.get_instagram_username() == "patrol_user"
+
+
+def test_use_ml_classifier_from_cache():
+    ss._cache["use_ml_classifier"] = "true"
+    assert ss.get_use_ml_classifier() is True
+    ss._cache["use_ml_classifier"] = "false"
+    assert ss.get_use_ml_classifier() is False
+
+
+def test_use_hf_inference_api_from_cache():
+    ss._cache["use_hf_inference_api"] = "on"
+    assert ss.get_use_hf_inference_api() is True
+    ss._cache["use_hf_inference_api"] = "0"
+    assert ss.get_use_hf_inference_api() is False
