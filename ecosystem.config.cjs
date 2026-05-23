@@ -11,6 +11,8 @@ module.exports = {
       interpreter: 'bash',
       env: {
         ENVIRONMENT: 'production',
+        // Ubuntu 26.04: Playwright has no chromium build for ubuntu26.04-x64 yet
+        PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: 'ubuntu24.04-x64',
       },
       max_restarts: 15,
       restart_delay: 5000,
