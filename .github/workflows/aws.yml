@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to EC2 Server
+      - name: Deploy to EC2
         uses: appleboy/ssh-action@master
 
         with:
@@ -19,7 +19,15 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
 
           script: |
-            cd ~/e-Patrolling/backend
+            cd ~/e-Patrolling
             git pull origin main
-            npm install
-            pm2 restart backend
+
+            if [ ! -d "venv" ]; then
+              python3 -m venv venv
+            fi
+
+            source venv/bin/activate
+
+            pip install -r requirements.txt
+
+            pm2 restart backend || pm2 start "venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 5000" --name backend
