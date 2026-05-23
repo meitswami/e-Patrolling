@@ -59,9 +59,11 @@ jobs:
               echo 'ENVIRONMENT=production' >> .env
             fi
             # Avoid blocking startup on small EC2 (ML preload downloads multi-GB models)
-            if grep -q '^PRELOAD_AI_MODELS=true' .env; then
-              sed -i 's/^PRELOAD_AI_MODELS=true/PRELOAD_AI_MODELS=false/' .env
-            fi
+            for key in PRELOAD_AI_MODELS USE_ML_CLASSIFIER USE_INDICBERT; do
+              if grep -q "^${key}=true" .env; then
+                sed -i "s/^${key}=true/${key}=false/" .env
+              fi
+            done
 
             # Optional GitHub repo secrets (Settings → Secrets → Actions)
             if [ -n "${{ secrets.EC2_DATABASE_URL }}" ]; then
@@ -93,12 +95,26 @@ jobs:
             pm2 start ecosystem.config.cjs
             pm2 save
 
-            sleep 5
             echo "=== EC2 check ==="
             bash scripts/ec2-check.sh
 
-            echo "=== Health (must pass) ==="
-            curl -sf http://127.0.0.1:5000/health || (echo "Backend not responding on :5000" && pm2 logs backend --lines 40 --nostream && exit 1)
+            echo "=== Health (must pass, retry up to 90s) ==="
+            ok=0
+            for i in $(seq 1 18); do
+              if curl -sf http://127.0.0.1:5000/health >/dev/null; then
+                ok=1
+                curl -s http://127.0.0.1:5000/health
+                echo ""
+                break
+              fi
+              echo "Waiting for backend... attempt $i/18"
+              sleep 5
+            done
+            if [ "$ok" -ne 1 ]; then
+              echo "Backend not responding on :5000 after 90s"
+              pm2 logs backend --lines 50 --nostream
+              exit 1
+            fi
 
             echo "=== CORS preflight (local) ==="
             curl -sf -X OPTIONS "http://127.0.0.1:5000/api/v1/auth/login" \
