@@ -486,8 +486,17 @@ class InstagramCrawler(BaseCrawler):
 
                 if ckpt:
                     ckpt.register_comments(url, batch)
-                    if outcome.stopped_at_known or len(batch) < max_comments_per_post:
+                    # Only mark post fully crawled when we found overlap with
+                    # known comments AND no new comments were discovered. This
+                    # means we've exhausted the comment thread for this post.
+                    # If new comments were found, the post may still receive more.
+                    no_new_found = len(batch) == 0
+                    if outcome.stopped_at_known and no_new_found:
                         ckpt.mark_post_complete(url, fully=True)
+                    elif len(batch) > 0:
+                        # New comments found — post is actively receiving comments,
+                        # so reset fully_crawled to ensure we re-check next run.
+                        ckpt.mark_post_complete(url, fully=False)
                     if url in ckpt.pending_post_urls:
                         ckpt.pending_post_urls = [u for u in ckpt.pending_post_urls if u != url]
                     if on_post_saved:
