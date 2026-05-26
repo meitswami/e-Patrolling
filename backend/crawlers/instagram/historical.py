@@ -200,7 +200,16 @@ def _collect_incremental(
     seen_keys: set[str],
 ) -> tuple[List[CrawledComment], bool]:
     """
-    Instagram shows newer comments first. Stop when we hit a comment already indexed.
+    Collect genuinely new comments from a batch, skipping already-indexed ones.
+
+    Unlike the previous implementation that broke at the first known comment
+    (assuming newest-first ordering), this version scans the ENTIRE batch and
+    collects all comments that are not yet known. Instagram does NOT guarantee
+    strict reverse-chronological ordering after expanding threads — older
+    comments can appear before newer ones, so we must not stop early.
+
+    The `hit_known` flag is still returned for informational/checkpoint purposes
+    (indicates the crawler has overlap with previously indexed content).
     """
     new_items: List[CrawledComment] = []
     hit_known = False
@@ -212,7 +221,10 @@ def _collect_incremental(
         ch = c.content_hash()
         if (cid and cid in known_comment_ids) or ch in known_hashes:
             hit_known = True
-            break
+            # Don't break — continue scanning for new comments that may
+            # appear after known ones in the DOM (Instagram ordering is not
+            # guaranteed to be strictly newest-first after thread expansion).
+            continue
         new_items.append(c)
         seen_keys.add(dedupe)
     return new_items, hit_known
@@ -229,7 +241,7 @@ async def crawl_post_comments(
     known_hashes: Optional[set[str]] = None,
     incremental: bool = True,
 ) -> PostCrawlOutcome:
-    """Open post, expand comments; stop early when already-indexed comment id/hash is seen."""
+    """Open post, expand comments; collect new comments not in known set."""
     post_id = extract_post_id(post_url)
     known_ids = known_comment_ids or set()
     known_hashes_set = known_hashes or set()
@@ -246,6 +258,8 @@ async def crawl_post_comments(
     stopped_at_known = False
 
     if use_incremental:
+        prev_new_count = 0
+        stall_rounds = 0
         for round_idx in range(expand_rounds):
             if round_idx == 0:
                 expand_clicks += await _expand_comment_thread(page, 3)
@@ -271,7 +285,17 @@ async def crawl_post_comments(
             all_new.extend(new_batch)
             if hit:
                 stopped_at_known = True
-                break
+            # Stop expanding when we're not finding new comments anymore.
+            # This replaces the old "break on first known" logic which missed
+            # new comments appearing after known ones in the DOM.
+            if len(all_new) == prev_new_count:
+                stall_rounds += 1
+                if stall_rounds >= 2:
+                    # Two consecutive rounds with no new comments — done
+                    break
+            else:
+                stall_rounds = 0
+                prev_new_count = len(all_new)
             if len(all_new) >= max_comments:
                 break
     else:

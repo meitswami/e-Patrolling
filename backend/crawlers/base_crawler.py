@@ -83,7 +83,15 @@ class CrawledComment:
     raw_data: Dict[str, Any] = field(default_factory=dict)
     
     def content_hash(self) -> str:
-        """Unique hash of comment content for deduplication."""
+        """
+        Unique hash of comment content for deduplication.
+
+        Uses platform + comment_id + text to identify unique comments.
+        Note: When comment_id is synthetic (e.g. ig_XXXXXXXX generated from
+        username:text), this effectively deduplicates by content which is the
+        desired behavior for abuse monitoring (same abusive text from same user
+        on the same post should only be counted once).
+        """
         content = f"{self.platform}:{self.comment_id}:{self.text}"
         return hashlib.sha256(content.encode()).hexdigest()
 
