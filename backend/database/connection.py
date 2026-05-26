@@ -128,7 +128,8 @@ async def init_db() -> None:
         pool_size=10,
         max_overflow=20,
         pool_timeout=30,
-        pool_recycle=3600,
+        pool_recycle=1800,  # Recycle connections every 30min (Supabase PgBouncer drops idle sooner)
+        pool_pre_ping=True,  # Test connections before use — discard stale/reset ones
         echo=settings.DEBUG,
         connect_args=connect_args,
     )
