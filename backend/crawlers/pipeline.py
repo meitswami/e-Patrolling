@@ -4,6 +4,7 @@ End-to-end crawl pipeline: fetch comments → store → classify → evidence.
 Runs synchronously (usable without Redis). Called from API, CLI, or queue worker.
 """
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -38,6 +39,23 @@ from crawlers.crawl_state import (
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Global semaphore enforcing MAX_CONCURRENT_BROWSERS. Prevents memory exhaustion
+# from too many Chromium instances running simultaneously.
+_browser_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _get_browser_semaphore() -> asyncio.Semaphore:
+    """Lazy-init semaphore (must be created inside a running event loop)."""
+    global _browser_semaphore
+    if _browser_semaphore is None:
+        _browser_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_BROWSERS)
+    return _browser_semaphore
+
+
+# Per-target crawl timeout: regular=5min, historical=15min
+_CRAWL_TIMEOUT_REGULAR = 300
+_CRAWL_TIMEOUT_HISTORICAL = 900
 
 
 async def _load_known_hashes(session: AsyncSession, target_id: UUID) -> set[str]:
@@ -118,41 +136,297 @@ async def run_crawl_for_target(
         )
 
     try:
-        async with crawler_cls() as crawler:
-            crawl_kwargs: dict = {
-                "max_comments": max_comments,
-                "known_hashes": known_hashes,
-            }
-            if run_historical:
-                crawl_kwargs["historical"] = True
-                crawl_kwargs["max_posts"] = settings.HISTORICAL_CRAWL_MAX_POSTS
-                crawl_kwargs["max_comments_per_post"] = settings.HISTORICAL_CRAWL_MAX_COMMENTS_PER_POST
-                crawl_kwargs["checkpoint"] = checkpoint
-                crawl_kwargs["on_post_saved"] = _persist_checkpoint
-            elif historical:
-                logger.warning(
-                    "Historical crawl not supported for %s — using regular crawl",
-                    platform.value,
+        sem = _get_browser_semaphore()
+        crawl_timeout = _CRAWL_TIMEOUT_HISTORICAL if run_historical else _CRAWL_TIMEOUT_REGULAR
+
+        async with sem:
+            async with crawler_cls() as crawler:
+                crawl_kwargs: dict = {
+                    "max_comments": max_comments,
+                    "known_hashes": known_hashes,
+                }
+                if run_historical:
+                    crawl_kwargs["historical"] = True
+                    crawl_kwargs["max_posts"] = settings.HISTORICAL_CRAWL_MAX_POSTS
+                    crawl_kwargs["max_comments_per_post"] = settings.HISTORICAL_CRAWL_MAX_COMMENTS_PER_POST
+                    crawl_kwargs["checkpoint"] = checkpoint
+                    crawl_kwargs["on_post_saved"] = _persist_checkpoint
+                elif historical:
+                    logger.warning(
+                        "Historical crawl not supported for %s — using regular crawl",
+                        platform.value,
+                    )
+
+                try:
+                    crawl_result = await asyncio.wait_for(
+                        crawler.crawl_target_profile(
+                            target.username,
+                            **crawl_kwargs,
+                        ),
+                        timeout=crawl_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(
+                        "Crawl timed out for @%s after %ds",
+                        target.username,
+                        crawl_timeout,
+                    )
+                    log.success = False
+                    log.error_message = f"Crawl timed out after {crawl_timeout}s"
+                    log.completed_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    return {
+                        "target_id": str(target_id),
+                        "target_username": target.username,
+                        "platform": platform.value,
+                        "log_id": str(log.id),
+                        "historical": run_historical,
+                        "posts_crawled": 0,
+                        "success": False,
+                        "error": f"Crawl timed out after {crawl_timeout}s",
+                        "comments_new": 0,
+                        "abusive_detected": 0,
+                        "evidence_ids": [],
+                    }
+
+                if not crawl_result.success:
+                    log.success = False
+                    err = crawl_result.error or "Crawl failed"
+                    if "Browser session" in err or "not initialized" in err:
+                        err = (
+                            f"{err}. Restart the API without --reload, run "
+                            "`python -m playwright install chromium` in backend/.venv, "
+                            "and connect Instagram in Settings (session cookies)."
+                        )
+                    log.error_message = err
+                    log.completed_at = datetime.now(timezone.utc)
+                    log.duration_seconds = crawl_result.duration_seconds
+                    await session.commit()
+                    return {
+                        "target_id": str(target_id),
+                        "target_username": target.username,
+                        "platform": platform.value,
+                        "log_id": str(log.id),
+                        "historical": run_historical,
+                        "posts_crawled": crawl_result.pages_crawled or 0,
+                        "success": False,
+                        "error": crawl_result.error,
+                        "comments_new": 0,
+                        "abusive_detected": 0,
+                        "evidence_ids": [],
+                    }
+
+                demo_mode = getattr(crawler, "demo_mode", False)
+
+                for raw in crawl_result.comments:
+                    content_hash = raw.content_hash()
+                    if content_hash in known_hashes:
+                        continue
+                    known_hashes.add(content_hash)
+
+                    from osint.avatar_hash import compute_avatar_hash
+
+                    accused_bio = raw.raw_data.get("accused_bio") or raw.raw_data.get("bio")
+                    avatar_url = raw.accused_avatar_url or raw.raw_data.get("accused_avatar_url")
+                    avatar_hash = await compute_avatar_hash(avatar_url) if avatar_url else None
+
+                    accused = await get_or_create_accused(
+                        session,
+                        platform=platform,
+                        username=raw.accused_username or "unknown",
+                        profile_url=raw.accused_profile_url or f"https://instagram.com/{raw.accused_username}",
+                        display_name=raw.accused_display_name,
+                        avatar_url=avatar_url or None,
+                        bio=accused_bio,
+                        avatar_hash=avatar_hash,
+                    )
+
+                    detected = detect_language(raw.text)
+                    lang = detected.language
+                    if raw.language_hint:
+                        try:
+                            lang = LanguageType(raw.language_hint.lower())
+                        except ValueError:
+                            pass
+
+                    db_comment = CrawledComment(
+                        content_hash=content_hash,
+                        platform=platform,
+                        post_url=raw.post_url,
+                        post_id=raw.post_id or None,
+                        comment_id=raw.comment_id or None,
+                        comment_url=raw.comment_url,
+                        text=raw.text,
+                        language=lang,
+                        target_id=target.id,
+                        accused_id=accused.id,
+                        platform_timestamp=raw.timestamp,
+                        raw_data=raw.raw_data,
+                        is_processed=True,
+                        processed_at=datetime.now(timezone.utc),
+                    )
+                    session.add(db_comment)
+                    await session.flush()
+                    new_count += 1
+
+                    classification = classify_comment(raw.text, lang.value)
+                    if not classification.is_abusive:
+                        continue
+
+                    abusive_count += 1
+                    if classification.severity_level.value == "CRITICAL":
+                        critical_count += 1
+
+                    ai_row = AIResult(
+                        comment_id=db_comment.id,
+                        is_abusive=True,
+                        is_sexual_harassment=classification.is_sexual_harassment,
+                        is_rape_threat=classification.is_rape_threat,
+                        is_stalking=classification.is_stalking,
+                        is_threat=classification.is_threat,
+                        is_bullying=classification.is_bullying,
+                        confidence_score=classification.confidence_score,
+                        toxicity_score=classification.toxicity_score,
+                        severity_score=classification.severity_score,
+                        risk_score=classification.risk_score,
+                        severity_level=classification.severity_level,
+                        detected_language=classification.detected_language,
+                        matched_keywords=classification.matched_keywords,
+                        model_used=classification.model_used,
+                    )
+                    session.add(ai_row)
+                    await session.flush()
+
+                    from osint.permaliinks import build_comment_permalink, build_permalink_snapshot
+
+                    comment_url = raw.comment_url or build_comment_permalink(
+                        platform.value,
+                        username=raw.accused_username or accused.username,
+                        post_id=raw.post_id or "",
+                        comment_id=raw.comment_id or "",
+                        post_url=raw.post_url,
+                    )
+                    if comment_url and not db_comment.comment_url:
+                        db_comment.comment_url = comment_url
+
+                    eid = generate_evidence_id()
+                    from evidence.screenshot_engine import capture_evidence_artifacts
+
+                    screenshot_path = await capture_evidence_artifacts(
+                        crawler,
+                        evidence_id=eid,
+                        platform=platform.value,
+                        comment_text=raw.text,
+                        accused_username=raw.accused_username or accused.username,
+                        target_username=target.username,
+                        severity=classification.severity_level.value,
+                        post_url=raw.post_url,
+                        page_url=comment_url or raw.post_url,
+                        comment_url=comment_url,
+                        comment_posted_at=raw.timestamp.isoformat() if raw.timestamp else None,
+                        demo_mode=demo_mode,
+                    )
+
+                    screenshot_hash = None
+                    if screenshot_path:
+                        from evidence.metadata import resolve_screenshot_path, sha256_file
+
+                        abs_path = resolve_screenshot_path(
+                            screenshot_path, settings.EVIDENCE_STORAGE_PATH
+                        )
+                        screenshot_hash = sha256_file(abs_path)
+
+                    permalink_snapshot = build_permalink_snapshot(
+                        platform=platform.value,
+                        username=raw.accused_username or accused.username,
+                        post_url=raw.post_url,
+                        comment_url=comment_url,
+                        post_id=raw.post_id,
+                        comment_id=raw.comment_id,
+                        comment_posted_at=raw.timestamp.isoformat() if raw.timestamp else None,
+                        captured_at=datetime.now(timezone.utc).isoformat(),
+                        raw_data=raw.raw_data,
+                    )
+                    if classification.abuse_categories:
+                        permalink_snapshot["abuse_categories"] = classification.abuse_categories
+                    from ai.abuse_explanations import build_abuse_explanations
+
+                    permalink_snapshot["abuse_explanations"] = build_abuse_explanations(
+                        raw.text,
+                        classification.abuse_categories,
+                    )
+
+                    evidence = await create_evidence_from_classification(
+                        session,
+                        comment_id=db_comment.id,
+                        ai_result_id=ai_row.id,
+                        target_id=target.id,
+                        accused_id=accused.id,
+                        platform=platform,
+                        post_url=raw.post_url,
+                        comment_text=raw.text,
+                        comment_timestamp=raw.timestamp,
+                        classification=classification,
+                        screenshot_path=screenshot_path,
+                        screenshot_hash=screenshot_hash,
+                        evidence_id=eid,
+                        comment_url=comment_url,
+                        platform_comment_id=raw.comment_id or None,
+                        post_id=raw.post_id or None,
+                        permalink_snapshot=permalink_snapshot,
+                    )
+
+                    from websocket.events import broadcast_evidence_created
+
+                    await broadcast_evidence_created(
+                        evidence_id=evidence.evidence_id,
+                        severity=classification.severity_level.value,
+                        platform=platform.value,
+                        target_username=target.username,
+                        comment_preview=raw.text,
+                        risk_score=classification.risk_score,
+                    )
+                    evidence_ids_created.append(evidence.evidence_id)
+
+                    accused.total_incidents += 1
+                    if classification.severity_level.value == "CRITICAL":
+                        accused.critical_count += 1
+                    elif classification.severity_level.value == "HIGH":
+                        accused.high_count += 1
+                    accused.max_risk_score = max(accused.max_risk_score, classification.risk_score)
+                    accused.last_seen_at = datetime.now(timezone.utc)
+
+                target.last_crawled_at = datetime.now(timezone.utc)
+                log.comments_found = len(crawl_result.comments)
+                log.comments_new = new_count
+                log.abusive_detected = abusive_count
+                log.critical_detected = critical_count
+                log.duration_seconds = crawl_result.duration_seconds
+                log.pages_crawled = crawl_result.pages_crawled
+                log.success = True
+                log.completed_at = datetime.now(timezone.utc)
+                if run_historical and crawl_result.crawl_progress:
+                    log.crawl_progress = crawl_result.crawl_progress
+                    await save_target_checkpoint(session, checkpoint)
+
+                await session.commit()
+
+                from websocket.events import broadcast_crawl_completed
+
+                await broadcast_crawl_completed(
+                    target_username=target.username,
+                    comments_new=new_count,
+                    abusive_detected=abusive_count,
+                    success=True,
                 )
 
-            crawl_result = await crawler.crawl_target_profile(
-                target.username,
-                **crawl_kwargs,
-            )
+                logger.info(
+                    "Crawl complete @%s: %d new, %d abusive",
+                    target.username,
+                    new_count,
+                    abusive_count,
+                )
 
-            if not crawl_result.success:
-                log.success = False
-                err = crawl_result.error or "Crawl failed"
-                if "Browser session" in err or "not initialized" in err:
-                    err = (
-                        f"{err}. Restart the API without --reload, run "
-                        "`python -m playwright install chromium` in backend/.venv, "
-                        "and connect Instagram in Settings (session cookies)."
-                    )
-                log.error_message = err
-                log.completed_at = datetime.now(timezone.utc)
-                log.duration_seconds = crawl_result.duration_seconds
-                await session.commit()
                 return {
                     "target_id": str(target_id),
                     "target_username": target.username,
@@ -160,238 +434,13 @@ async def run_crawl_for_target(
                     "log_id": str(log.id),
                     "historical": run_historical,
                     "posts_crawled": crawl_result.pages_crawled or 0,
-                    "success": False,
-                    "error": crawl_result.error,
-                    "comments_new": 0,
-                    "abusive_detected": 0,
-                    "evidence_ids": [],
+                    "success": True,
+                    "comments_new": new_count,
+                    "abusive_detected": abusive_count,
+                    "critical_detected": critical_count,
+                    "duration_seconds": crawl_result.duration_seconds,
+                    "evidence_ids": evidence_ids_created,
                 }
-
-            demo_mode = getattr(crawler, "demo_mode", False)
-
-            for raw in crawl_result.comments:
-                content_hash = raw.content_hash()
-                if content_hash in known_hashes:
-                    continue
-                known_hashes.add(content_hash)
-
-                from osint.avatar_hash import compute_avatar_hash
-
-                accused_bio = raw.raw_data.get("accused_bio") or raw.raw_data.get("bio")
-                avatar_url = raw.accused_avatar_url or raw.raw_data.get("accused_avatar_url")
-                avatar_hash = await compute_avatar_hash(avatar_url) if avatar_url else None
-
-                accused = await get_or_create_accused(
-                    session,
-                    platform=platform,
-                    username=raw.accused_username or "unknown",
-                    profile_url=raw.accused_profile_url or f"https://instagram.com/{raw.accused_username}",
-                    display_name=raw.accused_display_name,
-                    avatar_url=avatar_url or None,
-                    bio=accused_bio,
-                    avatar_hash=avatar_hash,
-                )
-
-                detected = detect_language(raw.text)
-                lang = detected.language
-                if raw.language_hint:
-                    try:
-                        lang = LanguageType(raw.language_hint.lower())
-                    except ValueError:
-                        pass
-
-                db_comment = CrawledComment(
-                    content_hash=content_hash,
-                    platform=platform,
-                    post_url=raw.post_url,
-                    post_id=raw.post_id or None,
-                    comment_id=raw.comment_id or None,
-                    comment_url=raw.comment_url,
-                    text=raw.text,
-                    language=lang,
-                    target_id=target.id,
-                    accused_id=accused.id,
-                    platform_timestamp=raw.timestamp,
-                    raw_data=raw.raw_data,
-                    is_processed=True,
-                    processed_at=datetime.now(timezone.utc),
-                )
-                session.add(db_comment)
-                await session.flush()
-                new_count += 1
-
-                classification = classify_comment(raw.text, lang.value)
-                if not classification.is_abusive:
-                    continue
-
-                abusive_count += 1
-                if classification.severity_level.value == "CRITICAL":
-                    critical_count += 1
-
-                ai_row = AIResult(
-                    comment_id=db_comment.id,
-                    is_abusive=True,
-                    is_sexual_harassment=classification.is_sexual_harassment,
-                    is_rape_threat=classification.is_rape_threat,
-                    is_stalking=classification.is_stalking,
-                    is_threat=classification.is_threat,
-                    is_bullying=classification.is_bullying,
-                    confidence_score=classification.confidence_score,
-                    toxicity_score=classification.toxicity_score,
-                    severity_score=classification.severity_score,
-                    risk_score=classification.risk_score,
-                    severity_level=classification.severity_level,
-                    detected_language=classification.detected_language,
-                    matched_keywords=classification.matched_keywords,
-                    model_used=classification.model_used,
-                )
-                session.add(ai_row)
-                await session.flush()
-
-                from osint.permaliinks import build_comment_permalink, build_permalink_snapshot
-
-                comment_url = raw.comment_url or build_comment_permalink(
-                    platform.value,
-                    username=raw.accused_username or accused.username,
-                    post_id=raw.post_id or "",
-                    comment_id=raw.comment_id or "",
-                    post_url=raw.post_url,
-                )
-                if comment_url and not db_comment.comment_url:
-                    db_comment.comment_url = comment_url
-
-                eid = generate_evidence_id()
-                from evidence.screenshot_engine import capture_evidence_artifacts
-
-                screenshot_path = await capture_evidence_artifacts(
-                    crawler,
-                    evidence_id=eid,
-                    platform=platform.value,
-                    comment_text=raw.text,
-                    accused_username=raw.accused_username or accused.username,
-                    target_username=target.username,
-                    severity=classification.severity_level.value,
-                    post_url=raw.post_url,
-                    page_url=comment_url or raw.post_url,
-                    comment_url=comment_url,
-                    comment_posted_at=raw.timestamp.isoformat() if raw.timestamp else None,
-                    demo_mode=demo_mode,
-                )
-
-                screenshot_hash = None
-                if screenshot_path:
-                    from evidence.metadata import resolve_screenshot_path, sha256_file
-
-                    abs_path = resolve_screenshot_path(
-                        screenshot_path, settings.EVIDENCE_STORAGE_PATH
-                    )
-                    screenshot_hash = sha256_file(abs_path)
-
-                permalink_snapshot = build_permalink_snapshot(
-                    platform=platform.value,
-                    username=raw.accused_username or accused.username,
-                    post_url=raw.post_url,
-                    comment_url=comment_url,
-                    post_id=raw.post_id,
-                    comment_id=raw.comment_id,
-                    comment_posted_at=raw.timestamp.isoformat() if raw.timestamp else None,
-                    captured_at=datetime.now(timezone.utc).isoformat(),
-                    raw_data=raw.raw_data,
-                )
-                if classification.abuse_categories:
-                    permalink_snapshot["abuse_categories"] = classification.abuse_categories
-                from ai.abuse_explanations import build_abuse_explanations
-
-                permalink_snapshot["abuse_explanations"] = build_abuse_explanations(
-                    raw.text,
-                    classification.abuse_categories,
-                )
-
-                evidence = await create_evidence_from_classification(
-                    session,
-                    comment_id=db_comment.id,
-                    ai_result_id=ai_row.id,
-                    target_id=target.id,
-                    accused_id=accused.id,
-                    platform=platform,
-                    post_url=raw.post_url,
-                    comment_text=raw.text,
-                    comment_timestamp=raw.timestamp,
-                    classification=classification,
-                    screenshot_path=screenshot_path,
-                    screenshot_hash=screenshot_hash,
-                    evidence_id=eid,
-                    comment_url=comment_url,
-                    platform_comment_id=raw.comment_id or None,
-                    post_id=raw.post_id or None,
-                    permalink_snapshot=permalink_snapshot,
-                )
-
-                from websocket.events import broadcast_evidence_created
-
-                await broadcast_evidence_created(
-                    evidence_id=evidence.evidence_id,
-                    severity=classification.severity_level.value,
-                    platform=platform.value,
-                    target_username=target.username,
-                    comment_preview=raw.text,
-                    risk_score=classification.risk_score,
-                )
-                evidence_ids_created.append(evidence.evidence_id)
-
-                accused.total_incidents += 1
-                if classification.severity_level.value == "CRITICAL":
-                    accused.critical_count += 1
-                elif classification.severity_level.value == "HIGH":
-                    accused.high_count += 1
-                accused.max_risk_score = max(accused.max_risk_score, classification.risk_score)
-                accused.last_seen_at = datetime.now(timezone.utc)
-
-            target.last_crawled_at = datetime.now(timezone.utc)
-            log.comments_found = len(crawl_result.comments)
-            log.comments_new = new_count
-            log.abusive_detected = abusive_count
-            log.critical_detected = critical_count
-            log.duration_seconds = crawl_result.duration_seconds
-            log.pages_crawled = crawl_result.pages_crawled
-            log.success = True
-            log.completed_at = datetime.now(timezone.utc)
-            if run_historical and crawl_result.crawl_progress:
-                log.crawl_progress = crawl_result.crawl_progress
-                await save_target_checkpoint(session, checkpoint)
-
-            await session.commit()
-
-            from websocket.events import broadcast_crawl_completed
-
-            await broadcast_crawl_completed(
-                target_username=target.username,
-                comments_new=new_count,
-                abusive_detected=abusive_count,
-                success=True,
-            )
-
-            logger.info(
-                "Crawl complete @%s: %d new, %d abusive",
-                target.username,
-                new_count,
-                abusive_count,
-            )
-
-            return {
-                "target_id": str(target_id),
-                "target_username": target.username,
-                "platform": platform.value,
-                "log_id": str(log.id),
-                "historical": run_historical,
-                "posts_crawled": crawl_result.pages_crawled or 0,
-                "success": True,
-                "comments_new": new_count,
-                "abusive_detected": abusive_count,
-                "critical_detected": critical_count,
-                "duration_seconds": crawl_result.duration_seconds,
-                "evidence_ids": evidence_ids_created,
-            }
     finally:
         unregister_running(target_id)
 
