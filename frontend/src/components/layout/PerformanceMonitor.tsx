@@ -1,7 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Activity, ChevronDown, ChevronUp, Cpu, HardDrive, MemoryStick, Wifi } from 'lucide-react'
+import {
+  Activity,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  Trash2,
+  Wifi,
+} from 'lucide-react'
 
 interface SystemMetrics {
   ram: { total_mb: number; used_mb: number; available_mb: number; percent: number }
@@ -11,6 +21,18 @@ interface SystemMetrics {
   bandwidth: { rx_kbps: number; tx_kbps: number }
   timestamp: number
 }
+
+interface SpikeEntry {
+  id: string
+  metric: string
+  value: number
+  timestamp: number
+  threshold: number
+}
+
+const SPIKE_THRESHOLD = 95 // % — log when usage hits this or higher
+const MAX_SPIKE_ENTRIES = 30
+const SPIKE_STORAGE_KEY = 'perf-monitor-spikes'
 
 function ProgressBar({ percent, color }: { percent: number; color: string }) {
   const clamp = Math.min(100, Math.max(0, percent))
@@ -58,6 +80,28 @@ function MetricCard({
   )
 }
 
+function loadSpikes(): SpikeEntry[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(SPIKE_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.slice(0, MAX_SPIKE_ENTRIES)
+  } catch {
+    return []
+  }
+}
+
+function saveSpikes(spikes: SpikeEntry[]) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(SPIKE_STORAGE_KEY, JSON.stringify(spikes.slice(0, MAX_SPIKE_ENTRIES)))
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
 export function PerformanceMonitor() {
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
   const [collapsed, setCollapsed] = useState(() => {
@@ -67,7 +111,31 @@ export function PerformanceMonitor() {
     return false
   })
   const [error, setError] = useState<string | null>(null)
+  const [spikes, setSpikes] = useState<SpikeEntry[]>(() => loadSpikes())
+  const [logsExpanded, setLogsExpanded] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastSpikeAtRef = useRef<Record<string, number>>({})
+
+  const recordSpike = useCallback((metric: string, value: number) => {
+    const now = Date.now()
+    // Debounce: don't log the same metric more often than once every 30s
+    const lastLogged = lastSpikeAtRef.current[metric] || 0
+    if (now - lastLogged < 30_000) return
+    lastSpikeAtRef.current[metric] = now
+
+    const entry: SpikeEntry = {
+      id: `${metric}-${now}`,
+      metric,
+      value: Math.round(value * 10) / 10,
+      timestamp: now,
+      threshold: SPIKE_THRESHOLD,
+    }
+    setSpikes((prev) => {
+      const next = [entry, ...prev].slice(0, MAX_SPIKE_ENTRIES)
+      saveSpikes(next)
+      return next
+    })
+  }, [])
 
   const fetchMetrics = useCallback(async () => {
     try {
@@ -83,13 +151,19 @@ export function PerformanceMonitor() {
         if (res.status === 401) return
         throw new Error(`HTTP ${res.status}`)
       }
-      const data = await res.json()
+      const data: SystemMetrics = await res.json()
       setMetrics(data)
       setError(null)
-    } catch (err) {
+
+      // Check each metric for spike threshold
+      if (data.ram.percent >= SPIKE_THRESHOLD) recordSpike('RAM', data.ram.percent)
+      if (data.swap.percent >= SPIKE_THRESHOLD) recordSpike('Swap', data.swap.percent)
+      if (data.cpu.percent >= SPIKE_THRESHOLD) recordSpike('CPU', data.cpu.percent)
+      if (data.disk.percent >= SPIKE_THRESHOLD) recordSpike('Disk', data.disk.percent)
+    } catch {
       setError('Metrics unavailable')
     }
-  }, [])
+  }, [recordSpike])
 
   useEffect(() => {
     fetchMetrics()
@@ -102,6 +176,11 @@ export function PerformanceMonitor() {
   useEffect(() => {
     localStorage.setItem('perf-monitor-collapsed', String(collapsed))
   }, [collapsed])
+
+  const clearSpikes = () => {
+    setSpikes([])
+    saveSpikes([])
+  }
 
   if (!metrics && !error) return null
 
@@ -120,6 +199,12 @@ export function PerformanceMonitor() {
           {metrics && !collapsed && (
             <span className="text-[10px] text-patrol-muted ml-2">
               Updated {new Date(metrics.timestamp * 1000).toLocaleTimeString()}
+            </span>
+          )}
+          {spikes.length > 0 && (
+            <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+              <AlertTriangle className="h-3 w-3" />
+              {spikes.length} spike{spikes.length !== 1 ? 's' : ''}
             </span>
           )}
         </div>
@@ -185,6 +270,71 @@ export function PerformanceMonitor() {
           ) : (
             <p className="text-xs text-patrol-muted">Loading metrics...</p>
           )}
+
+          {/* Spike Logs Section */}
+          <div className="mt-3 border-t border-patrol-border/50 pt-3">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setLogsExpanded(!logsExpanded)}
+                className="flex items-center gap-1.5 text-[11px] font-medium text-patrol-muted hover:text-patrol-text uppercase tracking-wider"
+              >
+                <AlertTriangle className="h-3 w-3" />
+                Spike Log (≥{SPIKE_THRESHOLD}%)
+                <span className="text-patrol-muted/60">({spikes.length})</span>
+                {logsExpanded ? (
+                  <ChevronUp className="h-3 w-3" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" />
+                )}
+              </button>
+              {spikes.length > 0 && logsExpanded && (
+                <button
+                  onClick={clearSpikes}
+                  className="flex items-center gap-1 text-[10px] text-patrol-muted hover:text-red-400 transition-colors"
+                  title="Clear all spike logs"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {logsExpanded && (
+              <div className="mt-2 max-h-48 overflow-y-auto rounded-md bg-patrol-bg/40 border border-patrol-border/30">
+                {spikes.length === 0 ? (
+                  <p className="px-3 py-3 text-[11px] text-patrol-muted">
+                    No spikes recorded yet. Will appear here when any metric hits {SPIKE_THRESHOLD}% or higher.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-patrol-border/30">
+                    {spikes.map((spike) => (
+                      <li
+                        key={spike.id}
+                        className="flex items-center justify-between px-3 py-1.5 text-[11px] hover:bg-patrol-surface/20"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`inline-block w-2 h-2 rounded-full ${
+                              spike.value >= 99 ? 'bg-red-500' : 'bg-amber-500'
+                            }`}
+                          />
+                          <span className="font-mono text-patrol-text font-semibold">
+                            {spike.metric}
+                          </span>
+                          <span className="font-mono text-amber-400">
+                            {spike.value}%
+                          </span>
+                        </div>
+                        <span className="font-mono text-patrol-muted">
+                          {new Date(spike.timestamp).toLocaleString()}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
