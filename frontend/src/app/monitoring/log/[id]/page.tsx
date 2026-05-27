@@ -46,6 +46,10 @@ export default function CrawlLogResultsPage() {
     load()
   }, [router, logId])
 
+  const scrollToEvidence = () => {
+    document.getElementById('evidence-section')?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   return (
     <AppShell
       title="Crawl results"
@@ -74,8 +78,18 @@ export default function CrawlLogResultsPage() {
         <>
           <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="Status" value={data.success ? 'OK' : 'Failed'} />
-            <Stat label="New comments" value={String(data.comments_new)} />
-            <Stat label="Abusive captured" value={String(data.abusive_detected)} />
+            <Stat
+              label="New comments"
+              value={String(data.comments_new)}
+              onClick={data.evidence.length > 0 ? scrollToEvidence : undefined}
+              clickable={data.evidence.length > 0}
+            />
+            <Stat
+              label="Abusive captured"
+              value={String(data.abusive_detected)}
+              onClick={data.evidence.length > 0 ? scrollToEvidence : undefined}
+              clickable={data.evidence.length > 0}
+            />
             <Stat
               label="Run time"
               value={new Date(data.started_at).toLocaleString()}
@@ -87,17 +101,30 @@ export default function CrawlLogResultsPage() {
               No abusive evidence captured in this run. Check Evidence Feed for older items.
             </p>
           ) : (
-            <div className="space-y-4">
+            <div id="evidence-section" className="space-y-4">
               <h2 className="font-mono text-sm text-patrol-accent">
                 Abusive results & proof ({data.evidence.length})
               </h2>
+              <p className="text-xs text-patrol-muted">
+                Click any card to view full evidence details, or click an inner link for a specific page.
+              </p>
               {data.evidence.map((ev) => {
                 const sev = SEVERITY_CONFIG[ev.severity as keyof typeof SEVERITY_CONFIG]
                 const img = evidenceImageUrl(ev.screenshot_path)
                 return (
                   <article
                     key={ev.evidence_id}
-                    className="rounded-xl border border-patrol-border bg-patrol-card p-4"
+                    onClick={() => router.push(`/evidence/${ev.uuid}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        router.push(`/evidence/${ev.uuid}`)
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`View full evidence ${ev.evidence_id}`}
+                    className="cursor-pointer rounded-xl border border-patrol-border bg-patrol-card p-4 transition hover:border-patrol-accent/50 hover:bg-patrol-card/80 focus:outline-none focus:ring-2 focus:ring-patrol-accent/40"
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <AbuseCategoryBadges categories={ev.abuse_categories ?? []} />
@@ -114,12 +141,16 @@ export default function CrawlLogResultsPage() {
                       <span className="text-xs text-patrol-muted">
                         Risk {ev.risk_score}
                       </span>
+                      <span className="ml-auto text-xs text-patrol-accent/80">
+                        View details →
+                      </span>
                     </div>
                     {ev.accused_username && (
                       <p className="mt-2 text-sm">
                         Offender:{' '}
                         <Link
                           href={`/offenders/dossier/${encodeURIComponent(ev.accused_username)}`}
+                          onClick={(e) => e.stopPropagation()}
                           className="font-mono text-patrol-accent hover:underline"
                         >
                           @{ev.accused_username}
@@ -134,7 +165,13 @@ export default function CrawlLogResultsPage() {
                     />
                     <AbuseExplanationPanel explanations={ev.abuse_explanations ?? []} />
                     {img && (
-                      <a href={img} target="_blank" rel="noopener noreferrer" className="mt-3 block">
+                      <a
+                        href={img}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-3 block"
+                      >
                         <img
                           src={img}
                           alt="Evidence screenshot"
@@ -145,6 +182,7 @@ export default function CrawlLogResultsPage() {
                     <div className="mt-3 flex flex-wrap gap-3">
                       <Link
                         href={`/evidence/${ev.uuid}`}
+                        onClick={(e) => e.stopPropagation()}
                         className="text-xs text-patrol-accent hover:underline"
                       >
                         View full evidence ({ev.evidence_id}) →
@@ -152,6 +190,7 @@ export default function CrawlLogResultsPage() {
                       {ev.accused_username && (
                         <Link
                           href={`/offenders/dossier/${encodeURIComponent(ev.accused_username)}`}
+                          onClick={(e) => e.stopPropagation()}
                           className="text-xs text-patrol-muted hover:text-patrol-accent"
                         >
                           Offender dossier →
@@ -169,9 +208,38 @@ export default function CrawlLogResultsPage() {
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  onClick,
+  clickable,
+}: {
+  label: string
+  value: string
+  onClick?: () => void
+  clickable?: boolean
+}) {
+  const baseClass =
+    'rounded-xl border border-patrol-border bg-patrol-card p-4 transition'
+  const interactiveClass = clickable
+    ? 'cursor-pointer hover:border-patrol-accent/50 hover:bg-patrol-card/80 focus:outline-none focus:ring-2 focus:ring-patrol-accent/40'
+    : ''
+
+  if (clickable && onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${baseClass} ${interactiveClass} text-left`}
+      >
+        <p className="text-xs text-patrol-muted">{label}</p>
+        <p className="mt-1 text-sm text-patrol-text">{value}</p>
+      </button>
+    )
+  }
+
   return (
-    <div className="rounded-xl border border-patrol-border bg-patrol-card p-4">
+    <div className={baseClass}>
       <p className="text-xs text-patrol-muted">{label}</p>
       <p className="mt-1 text-sm text-patrol-text">{value}</p>
     </div>
