@@ -139,6 +139,15 @@ async def run_crawl_for_target(
         sem = _get_browser_semaphore()
         crawl_timeout = _CRAWL_TIMEOUT_HISTORICAL if run_historical else _CRAWL_TIMEOUT_REGULAR
 
+        from websocket.events import broadcast_crawl_activity
+
+        await broadcast_crawl_activity(
+            target_username=target.username,
+            activity_type="crawl_started",
+            message=f"Starting {'historical' if run_historical else 'regular'} crawl for @{target.username}",
+            platform=platform.value,
+        )
+
         async with sem:
             async with crawler_cls() as crawler:
                 crawl_kwargs: dict = {
@@ -276,6 +285,14 @@ async def run_crawl_for_target(
                     abusive_count += 1
                     if classification.severity_level.value == "CRITICAL":
                         critical_count += 1
+
+                    await broadcast_crawl_activity(
+                        target_username=target.username,
+                        activity_type="comment_abusive",
+                        message=f"Abusive [{classification.severity_level.value}]: {raw.text[:80]}",
+                        detail=f"by @{raw.accused_username} — score {classification.risk_score}",
+                        platform=platform.value,
+                    )
 
                     ai_row = AIResult(
                         comment_id=db_comment.id,

@@ -24,6 +24,17 @@ export type WsMessage =
       }
     }
   | { type: 'stats_updated'; data: Record<string, number> }
+  | {
+      type: 'crawl_activity'
+      data: {
+        target_username: string
+        platform: string
+        activity_type: string
+        message: string
+        detail: string | null
+        timestamp: string
+      }
+    }
 
 function wsBaseUrl(): string {
   const env = process.env.NEXT_PUBLIC_WS_URL
