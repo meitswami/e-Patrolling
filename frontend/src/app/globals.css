@@ -3,12 +3,28 @@
 @tailwind utilities;
 
 :root {
-  --patrol-bg: #0a0e1a;
-  --patrol-accent: #00ff88;
+  --patrol-bg: #080c16;
+  --patrol-accent: #00e676;
 }
 
 body {
   @apply bg-patrol-bg text-patrol-text antialiased;
+}
+
+/* Scrollbar styling for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e2d42;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3f5f;
 }
 
 @keyframes pulse-dot {
@@ -18,4 +34,24 @@ body {
 
 .animate-pulse-dot {
   animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, #141c2b 25%, #1e2d42 50%, #141c2b 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
 }

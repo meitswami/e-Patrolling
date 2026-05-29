@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Activity, AlertTriangle, Shield, Users } from 'lucide-react'
+import { StatGridSkeleton } from '@/components/ui/Skeleton'
 import { ClientOnly } from '@/components/ClientOnly'
 import { AppShell } from '@/components/layout/AppShell'
 import { PlatformMonitorGrid } from '@/components/platforms/PlatformMonitorGrid'
@@ -114,14 +115,17 @@ export default function DashboardPage() {
           return (
             <div
               key={stat.label}
-              className="rounded-xl border border-patrol-border bg-patrol-card p-5 transition hover:border-patrol-accent/30"
+              className="group relative overflow-hidden rounded-xl border border-patrol-border bg-gradient-card p-5 shadow-card transition-all duration-200 hover:border-patrol-accent/30 hover:shadow-card-hover"
             >
-              <div className="flex items-start justify-between">
+              <div className="absolute inset-0 bg-gradient-subtle opacity-0 transition-opacity group-hover:opacity-100" />
+              <div className="relative flex items-start justify-between">
                 <div>
-                  <p className="text-sm text-patrol-muted">{stat.label}</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-patrol-muted">{stat.label}</p>
                   <p className="mt-2 font-mono text-3xl font-bold text-patrol-text">{stat.value}</p>
                 </div>
-                <Icon className="h-5 w-5 text-patrol-accent/70" />
+                <div className="rounded-lg bg-patrol-accent/10 p-2">
+                  <Icon className="h-5 w-5 text-patrol-accent" />
+                </div>
               </div>
             </div>
           )
@@ -142,7 +146,9 @@ export default function DashboardPage() {
       )}
 
       {!stats && !error && (
-        <p className="mt-4 text-sm text-patrol-muted">Loading statistics from Supabase…</p>
+        <div className="mt-4">
+          <StatGridSkeleton />
+        </div>
       )}
 
       {stats && stats.total_evidence === 0 && (
