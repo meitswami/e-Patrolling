@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PlatformLabel } from '@/components/platforms/PlatformLabel'
 import { PlatformMonitorGrid } from '@/components/platforms/PlatformMonitorGrid'
+import { LiveCrawlFeed } from '@/components/crawl/LiveCrawlFeed'
 import { ClientOnly } from '@/components/ClientOnly'
 import { AppShell } from '@/components/layout/AppShell'
 import {
@@ -199,6 +200,11 @@ export default function MonitoringPage() {
           </button>
         )}
         {lastRun && <span className="text-sm text-patrol-muted">{lastRun}</span>}
+      </div>
+
+      {/* Live Crawl Activity Feed — real-time crawler actions */}
+      <div className="mb-6">
+        <LiveCrawlFeed />
       </div>
 
       {status?.recent_errors && status.recent_errors.length > 0 && (

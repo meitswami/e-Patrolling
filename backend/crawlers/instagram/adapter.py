@@ -438,6 +438,15 @@ class InstagramCrawler(BaseCrawler):
             scroll_rounds=settings.HISTORICAL_CRAWL_PROFILE_SCROLLS,
         )
 
+        from websocket.events import broadcast_crawl_activity
+
+        await broadcast_crawl_activity(
+            target_username=target_username,
+            activity_type="collecting_posts",
+            message=f"Found {len(post_urls)} posts on @{target_username}'s profile",
+            platform="instagram",
+        )
+
         ckpt = checkpoint
         if ckpt and ckpt.pending_post_urls:
             merged = list(dict.fromkeys(ckpt.pending_post_urls + post_urls))
@@ -471,6 +480,13 @@ class InstagramCrawler(BaseCrawler):
                 bool(known_ids or known_hashes),
             )
             try:
+                await broadcast_crawl_activity(
+                    target_username=target_username,
+                    activity_type="opening_post",
+                    message=f"Opening post {i}/{len(post_urls)}",
+                    detail=url,
+                    platform="instagram",
+                )
                 outcome = await crawl_post_comments(
                     self._page,
                     url,
@@ -508,6 +524,13 @@ class InstagramCrawler(BaseCrawler):
                         new_comments=len(batch),
                         stopped_at_known=outcome.stopped_at_known,
                     )
+                )
+                await broadcast_crawl_activity(
+                    target_username=target_username,
+                    activity_type="post_complete",
+                    message=f"Post {i}/{len(post_urls)}: found {len(batch)} new comment{'s' if len(batch) != 1 else ''}",
+                    detail=url,
+                    platform="instagram",
                 )
             except Exception as exc:
                 self.logger.warning("Failed post %s: %s", url, exc)
