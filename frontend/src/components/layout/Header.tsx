@@ -27,7 +27,8 @@ export function Header({ title, subtitle }: HeaderProps) {
   }
 
   return (
-    <header className="flex items-center justify-between border-b border-patrol-border bg-patrol-surface/80 px-6 py-4 backdrop-blur">
+    <header className="relative flex items-center justify-between border-b border-patrol-border/60 bg-patrol-surface/60 px-6 py-4 backdrop-blur-md">
+      <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-patrol-accent/20 to-transparent" />
       <div>
         <h1 className="font-mono text-xl font-semibold text-patrol-text">{title}</h1>
         {subtitle && <p className="mt-0.5 text-sm text-patrol-muted">{subtitle}</p>}
@@ -44,7 +45,7 @@ export function Header({ title, subtitle }: HeaderProps) {
         <button
           type="button"
           onClick={handleLogout}
-          className="flex items-center gap-2 rounded-lg border border-patrol-border px-3 py-2 text-sm text-patrol-muted transition hover:border-red-500/40 hover:text-red-400"
+          className="flex items-center gap-2 rounded-lg border border-patrol-border px-3 py-2 text-sm text-patrol-muted transition-all hover:border-patrol-danger/50 hover:text-patrol-danger hover:shadow-[0_0_8px_rgba(244,63,94,0.1)]"
         >
           <LogOut className="h-4 w-4" />
           Sign out
