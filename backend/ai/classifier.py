@@ -36,7 +36,7 @@ class ClassificationResult:
 
 def classify_comment(text: str, language_hint: Optional[str] = None) -> ClassificationResult:
     """Classify comment text using keyword rules and optional ML toxicity."""
-    from ai.text_normalize import normalize_for_abuse_detection
+    from ai.text_normalize import normalize_for_abuse_detection, is_predominantly_emoji
 
     normalized = normalize_for_abuse_detection(text)
     kw = analyze_text(text)
@@ -58,6 +58,26 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
     use_ml = app_settings.get_use_ml_classifier()
     use_hf = app_settings.get_use_hf_inference_api()
 
+    # Short-circuit: if the text is predominantly emoji with no keyword match,
+    # ML models produce unreliable scores — skip them entirely to avoid false positives
+    # like "God bless you ❤️❤️❤️" being scored Risk 99.
+    emoji_dominant = is_predominantly_emoji(text)
+    keyword_clean = not kw.is_abusive and not kw.matched_keywords
+
+    if emoji_dominant and keyword_clean:
+        return ClassificationResult(
+            is_abusive=False,
+            confidence_score=0.0,
+            toxicity_score=0.0,
+            severity_level=severity_from_score(0.0),
+            risk_score=0,
+            severity_score=0,
+            detected_language=lang,
+            matched_keywords=[],
+            abuse_categories=[],
+            model_used="keyword_v1_emoji_safe",
+        )
+
     ml_score = score_toxicity(text) if use_ml else None
     api_score = score_via_inference_api(text) if use_hf else None
 
@@ -71,7 +91,19 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
     scores = [s for s in (ml_score, indic_score, api_score) if s is not None]
 
     if scores:
-        combined = max(kw.confidence_score, *scores)
+        if keyword_clean:
+            # No keyword evidence — require a much higher ML consensus before
+            # overriding the clean keyword verdict (prevents emoji/benign-phrase
+            # false positives from single-model misfires).
+            # All available ML scores must agree above 0.90.
+            ml_override_threshold = 0.90
+            if all(s >= ml_override_threshold for s in scores):
+                combined = max(scores)
+            # else keep combined = 0.0 (keyword verdict)
+        else:
+            # Keywords already flagged something — ML can push score higher.
+            combined = max(kw.confidence_score, *scores)
+
         parts = ["keyword"]
         if ml_score is not None:
             parts.append("toxic_bert")
@@ -84,8 +116,8 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
     severity = severity_from_score(combined)
     risk = risk_score_from_confidence(combined)
     # Flag abusive if keywords matched OR combined score clears threshold (ML optional)
-    is_abusive = kw.is_abusive or combined >= threshold or any(
-        s >= max(0.5, threshold - 0.1) for s in scores
+    is_abusive = kw.is_abusive or combined >= threshold or (
+        not keyword_clean and any(s >= max(0.5, threshold - 0.1) for s in scores)
     )
 
     flags = kw.flags
@@ -93,12 +125,18 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
         flags["ml_toxic"] = True
 
     matched = kw.matched_keywords + (["ml_toxic"] if ml_score and ml_score >= 0.65 else [])
+    # hate_speech from ML alone requires both keyword evidence AND a very high score,
+    # or multi-model consensus at 0.95+. Prevents benign emoji comments being labelled.
+    ml_hate_speech = (
+        bool(ml_score and ml_score >= 0.95)
+        and not keyword_clean
+    )
     categories = extract_abuse_categories(
         matched_keywords=matched,
         is_sexual_harassment=flags.get("sexual_harassment", False),
         is_rape_threat=flags.get("rape_threat", False),
         is_stalking=flags.get("stalking", False),
-        is_hate_speech=flags.get("hate_speech", False) or bool(ml_score and ml_score >= 0.85),
+        is_hate_speech=flags.get("hate_speech", False) or ml_hate_speech,
         is_threat=flags.get("threat", False),
         is_bullying=flags.get("bullying", False),
     )
@@ -115,7 +153,7 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
         is_sexual_harassment=flags.get("sexual_harassment", False),
         is_rape_threat=flags.get("rape_threat", False),
         is_stalking=flags.get("stalking", False),
-        is_hate_speech=flags.get("hate_speech", False) or bool(ml_score and ml_score >= 0.85),
+        is_hate_speech=flags.get("hate_speech", False) or ml_hate_speech,
         is_threat=flags.get("threat", False),
         is_bullying=flags.get("bullying", False),
         abuse_categories=categories,

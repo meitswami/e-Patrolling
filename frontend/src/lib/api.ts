@@ -768,3 +768,54 @@ export async function getHealth(): Promise<HealthResponse> {
   if (!res.ok) throw new Error('API unreachable')
   return res.json() as Promise<HealthResponse>
 }
+
+// ── Abuse Dictionary / Lexicon API ───────────────────────────
+
+export interface LexiconPattern {
+  regex: string
+  score: number
+  label: string
+}
+
+export interface GlossaryTerm {
+  id: string
+  detect: string
+  display: string
+  categories: string[]
+  meaning_en: string
+  offender_implication: string
+  also_blocks?: string[]
+}
+
+export interface FullDictionary {
+  lexicon_version: string
+  glossary_version: string
+  total_patterns: number
+  total_terms: number
+  total_phrases: number
+  patterns: LexiconPattern[]
+  terms: GlossaryTerm[]
+  phrases: GlossaryTerm[]
+  models: Record<string, { id: string; task: string; notes: string; languages?: string[] }>
+}
+
+export interface AddTermPayload {
+  word: string
+  regex: string
+  score: number
+  label: string
+  meaning_en?: string
+  offender_implication?: string
+}
+
+export async function getFullDictionary(): Promise<FullDictionary> {
+  return request<FullDictionary>('/lexicon/full', {}, true)
+}
+
+export async function addDictionaryTerm(body: AddTermPayload): Promise<{ success: boolean; message: string; term_id: string; total_patterns: number }> {
+  return request('/lexicon/add-term', { method: 'POST', body: JSON.stringify(body) }, true)
+}
+
+export async function removeDictionaryTerm(id: string): Promise<{ success: boolean; message: string }> {
+  return request('/lexicon/remove-term', { method: 'DELETE', body: JSON.stringify({ id }) }, true)
+}

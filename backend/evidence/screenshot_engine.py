@@ -113,9 +113,11 @@ async def capture_playwright_screenshot(
     url: str,
     evidence_id: str,
     platform: str,
+    comment_text: Optional[str] = None,
 ) -> Optional[str]:
     """
     Capture a browser screenshot via an open crawler session.
+    Scrolls to and frames the specific comment when comment_text is supplied.
     Returns storage-relative path or None.
     """
     if not url or getattr(crawler, "demo_mode", True):
@@ -123,7 +125,13 @@ async def capture_playwright_screenshot(
 
     path = _evidence_path(platform, f"{evidence_id}_page")
     try:
-        saved = await crawler.take_screenshot(url, output_path=path)
+        # Pass comment_text for crawlers that support scroll-to-comment (e.g. Instagram)
+        import inspect
+        sig = inspect.signature(crawler.take_screenshot)
+        if "comment_text" in sig.parameters:
+            saved = await crawler.take_screenshot(url, output_path=path, comment_text=comment_text)
+        else:
+            saved = await crawler.take_screenshot(url, output_path=path)
     except Exception as exc:
         logger.warning("Playwright evidence screenshot failed: %s", exc)
         return None
@@ -185,6 +193,7 @@ async def capture_evidence_artifacts(
                 url=shot_url,
                 evidence_id=evidence_id,
                 platform=platform,
+                comment_text=comment_text,
             )
 
     if mode == "playwright":

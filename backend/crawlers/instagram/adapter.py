@@ -321,12 +321,68 @@ class InstagramCrawler(BaseCrawler):
         url: str,
         element_selector: Optional[str] = None,
         output_path: Optional[Path] = None,
+        comment_text: Optional[str] = None,
     ) -> Optional[Path]:
         if self.demo_mode or not self._page:
             return None
 
         await self._page.goto(url, wait_until="domcontentloaded")
+        await asyncio.sleep(2)
+
         path = output_path or self.get_screenshot_path(f"shot_{uuid4().hex[:8]}")
+
+        # Try to scroll to and capture the specific comment element
+        if element_selector or comment_text:
+            from crawlers.instagram.screenshot import capture_element_screenshot
+
+            # First try explicit CSS selector if provided
+            if element_selector:
+                try:
+                    el = self._page.locator(element_selector).first
+                    if await el.count() > 0:
+                        await el.scroll_into_view_if_needed()
+                        await asyncio.sleep(0.5)
+                        result = await capture_element_screenshot(self._page, element_selector, path)
+                        if result:
+                            return result
+                except Exception as exc:
+                    self.logger.debug("Element selector screenshot failed: %s", exc)
+
+            # Fall back: find comment by its text content and scroll to it
+            if comment_text:
+                snippet = comment_text[:60].strip()
+                try:
+                    # Expand comments if collapsed (click "View all X comments")
+                    for load_label in ("View all", "Load more comments", "more comment"):
+                        try:
+                            btn = self._page.get_by_text(load_label, exact=False).first
+                            if await btn.is_visible(timeout=2000):
+                                await btn.click()
+                                await asyncio.sleep(1.5)
+                                break
+                        except Exception:
+                            pass
+
+                    # Locate the comment span/div containing our snippet
+                    comment_el = self._page.get_by_text(snippet, exact=False).first
+                    if await comment_el.count() > 0:
+                        await comment_el.scroll_into_view_if_needed()
+                        await asyncio.sleep(0.8)
+                        # Grab the closest comment container (article or li ancestor)
+                        container = self._page.locator(
+                            "li:has-text('" + snippet.replace("'", "\\'") + "'), "
+                            "div[role='dialog']:has-text('" + snippet.replace("'", "\\'") + "')"
+                        ).first
+                        if await container.count() > 0:
+                            await container.screenshot(path=str(path))
+                            return path
+                        # If no container found, take a viewport screenshot centred on the element
+                        await capture_page_screenshot(self._page, path)
+                        return path
+                except Exception as exc:
+                    self.logger.debug("Comment-text scroll screenshot failed: %s", exc)
+
+        # Default: full-page screenshot
         return await capture_page_screenshot(self._page, path)
 
     async def crawl_target_profile(

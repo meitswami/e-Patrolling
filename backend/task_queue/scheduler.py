@@ -129,6 +129,24 @@ async def _weekly_evidence_export_job() -> None:
         logger.exception("Weekly export failed: %s", exc)
 
 
+async def _daily_discovery_job() -> None:
+    """Run daily auto-discovery of female verified 10K+ accounts."""
+    from database.connection import async_session_factory
+    from services.discovery_crawler import run_discovery
+
+    if not async_session_factory:
+        return
+    try:
+        async with async_session_factory() as session:
+            run = await run_discovery(session, triggered_by="scheduler")
+            logger.info(
+                "Daily discovery complete: %d profiles found (run %s)",
+                run.total_found, run.id,
+            )
+    except Exception as exc:
+        logger.exception("Daily discovery failed: %s", exc)
+
+
 def start_scheduler() -> None:
     """Start periodic crawl-all when enabled and interval > 0."""
     global _scheduler
@@ -161,6 +179,16 @@ def start_scheduler() -> None:
             replace_existing=True,
             max_instances=1,
         )
+    # Daily discovery: run at 2 AM every day
+    _scheduler.add_job(
+        _daily_discovery_job,
+        "cron",
+        hour=2,
+        minute=0,
+        id="shakti_daily_discovery",
+        replace_existing=True,
+        max_instances=1,
+    )
     _scheduler.start()
     logger.info(
         "Crawl scheduler started — every %ss (max_instances=1, coalesce=True)",

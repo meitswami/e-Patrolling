@@ -81,18 +81,30 @@ export default function CrawlLogResultsPage() {
             <Stat
               label="New comments"
               value={String(data.comments_new)}
-              onClick={data.evidence.length > 0 ? scrollToEvidence : undefined}
-              clickable={data.evidence.length > 0}
+              onClick={() => {
+                if (data.evidence.length > 0) {
+                  scrollToEvidence()
+                } else {
+                  router.push('/evidence')
+                }
+              }}
+              clickable
             />
             <Stat
               label="Abusive captured"
               value={String(data.abusive_detected)}
-              onClick={data.evidence.length > 0 ? scrollToEvidence : undefined}
-              clickable={data.evidence.length > 0}
+              onClick={() => {
+                if (data.evidence.length > 0) {
+                  scrollToEvidence()
+                } else {
+                  router.push('/evidence')
+                }
+              }}
+              clickable
             />
             <Stat
               label="Run time"
-              value={new Date(data.started_at).toLocaleString()}
+              value={formatRunTime(data.started_at)}
             />
           </div>
 
@@ -206,6 +218,21 @@ export default function CrawlLogResultsPage() {
       )}
     </AppShell>
   )
+}
+
+function formatRunTime(isoString: string): string {
+  const d = new Date(isoString)
+  if (Number.isNaN(d.getTime())) return isoString
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = d.getFullYear()
+  let hours = d.getHours()
+  const minutes = String(d.getMinutes()).padStart(2, '0')
+  const seconds = String(d.getSeconds()).padStart(2, '0')
+  const ampm = hours >= 12 ? 'PM' : 'AM'
+  hours = hours % 12 || 12
+  const hh = String(hours).padStart(2, '0')
+  return `${day}/${month}/${year} ${hh}:${minutes}:${seconds} ${ampm}`
 }
 
 function Stat({

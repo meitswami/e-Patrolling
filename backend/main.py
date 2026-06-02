@@ -263,6 +263,9 @@ def register_routers() -> None:
     from api.routes.website_requests import router as website_requests_router
     from api.routes.websocket import router as ws_router
     from api.routes.system_metrics import router as system_metrics_router
+    from api.routes.lexicon import router as lexicon_router
+    from api.routes.discovery import router as discovery_router
+    from api.routes.target_import import router as target_import_router
 
     app.include_router(public_router, prefix=f"{PREFIX}/public", tags=["Public Website"])
     app.include_router(
@@ -281,6 +284,9 @@ def register_routers() -> None:
     app.include_router(ai_router, prefix=f"{PREFIX}/ai", tags=["AI"])
     app.include_router(settings_router, prefix=f"{PREFIX}/settings", tags=["Settings"])
     app.include_router(system_metrics_router, prefix=f"{PREFIX}/metrics", tags=["Metrics"])
+    app.include_router(lexicon_router, prefix=f"{PREFIX}/lexicon", tags=["Abuse Dictionary"])
+    app.include_router(discovery_router, prefix=f"{PREFIX}/discovery", tags=["Auto-Discovery"])
+    app.include_router(target_import_router, prefix=f"{PREFIX}/targets/import", tags=["Target Import"])
     app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
     logger.info("Registered API routers under %s", PREFIX)
 

@@ -16,6 +16,8 @@ import {
   type RunningCrawlInfo,
 } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
+import { getToken } from '@/lib/auth'
+import { buildApiUrl } from '@/lib/constants'
 import type { Platform, TargetAccount, TargetSource } from '@/types'
 
 const PLATFORMS = ACTIVE_PATROL_PLATFORMS
@@ -172,9 +174,9 @@ export default function TargetsPage() {
       <div className="mb-4 flex flex-wrap gap-2">
         {(
           [
-            ['admin_panel', 'Admin panel targets'],
-            ['website_intake', 'From website intake'],
             ['all', 'All targets'],
+            ['website_intake', 'From website intake'],
+            ['admin_panel', 'Admin panel targets'],
           ] as const
         ).map(([value, label]) => (
           <button
@@ -210,6 +212,13 @@ export default function TargetsPage() {
         >
           Live Monitoring
         </Link>
+        <Link
+          href="/discovery"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-400 hover:bg-amber-500/20"
+        >
+          🔍 Auto-Discovery
+        </Link>
+        <BulkImportButton onComplete={loadTargets} />
         <button
           type="button"
           onClick={() => setShowForm((v) => !v)}
@@ -392,5 +401,166 @@ export default function TargetsPage() {
         })}
       </div>
     </AppShell>
+  )
+}
+
+function BulkImportButton({ onComplete }: { onComplete: () => Promise<void> }) {
+  const [showModal, setShowModal] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [result, setResult] = useState<{
+    imported: number
+    skipped: number
+    message: string
+    errors?: { row: number; error: string }[]
+  } | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+
+  function handleDownloadTemplate() {
+    const token = getToken()
+    const url = buildApiUrl('/targets/import/template.xlsx')
+    // Open with auth header via anchor
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'shakti_target_import_template.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setImportError(null)
+    setResult(null)
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const token = getToken()
+      const res = await fetch(buildApiUrl('/targets/import/import'), {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      })
+      const body = await res.json()
+      if (!res.ok) {
+        setImportError(body.detail || `Import failed (${res.status})`)
+      } else {
+        setResult(body)
+        await onComplete()
+      }
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+      // Reset input
+      e.target.value = ''
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setShowModal(true)}
+        className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-4 py-2 text-sm text-sky-300 hover:bg-sky-500/20"
+      >
+        📄 Bulk Import
+      </button>
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-patrol-border bg-patrol-bg p-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-patrol-text">Bulk Import Targets</h2>
+              <button
+                type="button"
+                onClick={() => { setShowModal(false); setResult(null); setImportError(null) }}
+                className="text-patrol-muted hover:text-patrol-text"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {/* Step 1: Download template */}
+              <div className="rounded-lg border border-patrol-border bg-patrol-surface p-4">
+                <p className="text-sm font-medium text-patrol-text">Step 1: Download Template</p>
+                <p className="mt-1 text-xs text-patrol-muted">
+                  Download the sample Excel template to understand the column format.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  className="mt-2 rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1.5 text-xs font-medium text-patrol-accent"
+                >
+                  📥 Download Template (.xlsx)
+                </button>
+              </div>
+
+              {/* Step 2: Upload file */}
+              <div className="rounded-lg border border-patrol-border bg-patrol-surface p-4">
+                <p className="text-sm font-medium text-patrol-text">Step 2: Upload Filled Excel</p>
+                <p className="mt-1 text-xs text-patrol-muted">
+                  Fill in your targets in the template and upload. Max 500 rows per import.
+                </p>
+                <label className="mt-2 block">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleFileUpload}
+                    disabled={uploading}
+                    className="block w-full text-sm text-patrol-muted file:mr-3 file:rounded-lg file:border file:border-patrol-accent/40 file:bg-patrol-accent/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-patrol-accent disabled:opacity-50"
+                  />
+                </label>
+                {uploading && (
+                  <p className="mt-2 text-xs text-patrol-accent">Uploading and importing…</p>
+                )}
+              </div>
+
+              {/* Error */}
+              {importError && (
+                <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                  {importError}
+                </p>
+              )}
+
+              {/* Result */}
+              {result && (
+                <div className="rounded-lg border border-patrol-accent/30 bg-patrol-accent/10 p-4">
+                  <p className="text-sm font-medium text-patrol-accent">{result.message}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                    <p className="text-patrol-text">✓ Imported: {result.imported}</p>
+                    <p className="text-patrol-muted">⏭ Skipped: {result.skipped}</p>
+                  </div>
+                  {result.errors && result.errors.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs text-patrol-muted">
+                        View errors ({result.errors.length})
+                      </summary>
+                      <ul className="mt-1 space-y-0.5 text-xs text-red-400">
+                        {result.errors.map((err, i) => (
+                          <li key={i}>Row {err.row}: {err.error}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+              )}
+
+              {/* Template columns info */}
+              <div className="text-xs text-patrol-muted">
+                <p className="font-medium text-patrol-text">Required columns:</p>
+                <p>username · platform · profile_url</p>
+                <p className="mt-1 font-medium text-patrol-text">Optional columns:</p>
+                <p>display_name · follower_count · is_verified · gender · region · notes</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
