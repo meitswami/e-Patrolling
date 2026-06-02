@@ -6,8 +6,8 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const jetbrains = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains' })
 
 export const metadata: Metadata = {
-  title: 'PATROL — Intelligence Dashboard',
-  description: 'Predictive Abuse Tracking & Regional Observation Layer',
+  title: 'शक्ति - Shakti (The Third Eye) — Intelligence Dashboard',
+  description: 'AI-Powered Social Media Intelligence & Women Safety Platform',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -32,11 +32,11 @@ export function LandingPage() {
         <section className="mx-auto max-w-5xl px-4 py-16 text-center md:py-24">
           <EPatrolLogo size="lg" className="mx-auto justify-center" />
           <h1 className="mt-8 text-4xl font-bold tracking-tight text-sky-900 md:text-5xl">
-            E-PATROL
+            शक्ति - Shakti (The Third Eye)
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-600">
-            Electronic patrolling for your social presence — we monitor abusive comments, trolls,
-            and offenders so you stay informed and protected.
+            AI-Powered Social Media Intelligence & Women Safety Platform — we monitor abusive
+            comments, trolls, and offenders so you stay informed and protected.
           </p>
           <a
             href="#safe"
@@ -50,9 +50,9 @@ export function LandingPage() {
           <div className="mx-auto max-w-5xl px-4">
             <h2 className="text-center text-2xl font-bold text-sky-900">What we do</h2>
             <p className="mx-auto mt-4 max-w-2xl text-center text-slate-600">
-              E-PATROL (Predictive Abuse Tracking &amp; Regional Observation Layer) helps individuals
-              and communities spot online harassment early — across Instagram, Facebook, X, and
-              Threads — with evidence you can act on.
+              शक्ति - Shakti (The Third Eye) is an AI-Powered Social Media Intelligence &amp; Women Safety
+              Platform that helps individuals and communities spot online harassment early — across
+              Instagram, Facebook, X, and Threads — with evidence you can act on.
             </p>
             <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {[
@@ -129,7 +129,7 @@ export function LandingPage() {
                 </summary>
                 <p className="mt-2 text-sm text-slate-600">
                   No. Intake data is used only for safety monitoring and is handled by authorized
-                  E-PATROL operators.
+                  Shakti operators.
                 </p>
               </details>
             </div>
@@ -140,12 +140,12 @@ export function LandingPage() {
           <div className="mx-auto max-w-xl px-4 text-center">
             <h2 className="text-2xl font-bold text-sky-900">Contact us</h2>
             <p className="mt-4 text-slate-600">
-              Questions about E-PATROL or your submission? Reach our team at{' '}
+              Questions about Shakti or your submission? Reach our team at{' '}
               <a
-                href="mailto:support@e-patrol.in"
+                href="mailto:support@shakti-eye.in"
                 className="font-medium text-sky-700 hover:underline"
               >
-                support@e-patrol.in
+                support@shakti-eye.in
               </a>
             </p>
           </div>
@@ -153,7 +153,7 @@ export function LandingPage() {
       </main>
 
       <footer className="border-t border-sky-100 bg-white py-8 text-center text-sm text-slate-500">
-        <p>© {new Date().getFullYear()} E-PATROL. All rights reserved.</p>
+        <p>© {new Date().getFullYear()} शक्ति - Shakti (The Third Eye). All rights reserved.</p>
         <p className="mt-2">
           <Link href="/" className="hover:text-sky-700">
             Home

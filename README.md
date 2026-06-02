@@ -1,7 +1,7 @@
-# 🛡️ PATROL
-## Predictive Abuse Tracking & Regional Observation Layer
+# 🛡️ शक्ति - Shakti (The Third Eye)
+## AI-Powered Social Media Intelligence & Women Safety Platform
 
-> **AI-Powered Regional Social Media Harassment Intelligence System**
+> **AI-Powered Social Media Intelligence & Women Safety Platform**
 > Built for Cyber Cells · Law Enforcement · Women Safety Organizations · OSINT Teams
 
 [![Phase](https://img.shields.io/badge/Phase-1%20Complete-green)]()
@@ -11,9 +11,9 @@
 
 ---
 
-## 🎯 What is PATROL?
+## 🎯 What is Shakti?
 
-PATROL is an enterprise-grade cyber intelligence platform that monitors social media platforms for harassment, abuse, and targeted threats against women influencers and public figures.
+Shakti (The Third Eye) is an enterprise-grade cyber intelligence platform that monitors social media platforms for harassment, abuse, and targeted threats against women influencers and public figures.
 
 It combines **real-time social media crawling**, **multilingual AI abuse detection** (Hindi + Hinglish + English), and a **SOC-grade intelligence dashboard** to help organizations detect, document, and report online harassment.
 

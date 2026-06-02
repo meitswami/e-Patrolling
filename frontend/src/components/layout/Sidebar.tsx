@@ -50,11 +50,11 @@ export function Sidebar() {
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-patrol-accent shadow-glow-sm" />
           </span>
           <span className="font-mono text-lg font-bold tracking-tight text-patrol-accent drop-shadow-[0_0_8px_rgba(0,230,118,0.3)]">
-            PATROL
+            शक्ति - SHAKTI
           </span>
         </div>
         <p className="mt-1 text-[11px] font-medium tracking-wider text-patrol-muted-dim uppercase">
-          Intelligence Command
+          The Third Eye
         </p>
       </div>
 
@@ -101,10 +101,10 @@ export function Sidebar() {
       {/* Footer */}
       <div className="border-t border-patrol-border/40 px-5 py-3">
         <p className="text-[10px] text-patrol-muted-dim">
-          PATROL v1.0.0-MVP
+          SHAKTI v1.0.0-MVP
         </p>
         <p className="text-[10px] text-patrol-muted-dim">
-          Abuse Tracking & Intelligence
+          AI-Powered Women Safety Platform
         </p>
       </div>
     </aside>

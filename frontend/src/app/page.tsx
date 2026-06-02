@@ -1,9 +1,9 @@
 import { LandingPage } from '@/components/marketing/LandingPage'
 
 export const metadata = {
-  title: 'E-PATROL — Stay Safe Online',
+  title: 'शक्ति - Shakti (The Third Eye) — Stay Safe Online',
   description:
-    'Electronic patrolling for social media — track abusers, trollers, and offenders on your profiles.',
+    'AI-Powered Social Media Intelligence & Women Safety Platform',
 }
 
 export default function HomePage() {

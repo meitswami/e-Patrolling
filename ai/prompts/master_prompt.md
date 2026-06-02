@@ -2,13 +2,10 @@ You are a Senior AI Architect, Principal Engineer, OSINT Specialist, Cyber Intel
 
 Your task is to build a COMPLETE ENTERPRISE-GRADE MVP platform called:
 
-# PATROL
+# शक्ति - Shakti (The Third Eye)
 
-## Full Form:
-Predictive Abuse Tracking & Regional Observation Layer
-
-Tagline:
-AI-Powered Regional Social Media Harassment Intelligence System
+## Tagline:
+AI-Powered Social Media Intelligence & Women Safety Platform
 
 ========================================================
 PROJECT OVERVIEW
