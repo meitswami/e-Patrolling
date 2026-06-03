@@ -46,6 +46,7 @@ async def list_evidence(
     severity: SeverityLevel | None = None,
     is_escalated: bool | None = None,
     search: str | None = Query(None, max_length=200),
+    target_id: str | None = Query(None, description="Filter by target account UUID"),
     session: AsyncSession = Depends(get_session),
     _user: User = Depends(get_current_user),
 ) -> PaginatedResponse[EvidenceListItem]:
@@ -67,6 +68,13 @@ async def list_evidence(
 
     count_q = select(func.count()).select_from(EvidenceReport)
 
+    if target_id:
+        try:
+            target_uuid = UUID(target_id)
+            base = base.where(EvidenceReport.target_id == target_uuid)
+            count_q = count_q.where(EvidenceReport.target_id == target_uuid)
+        except ValueError:
+            pass
     if platform is not None:
         base = base.where(EvidenceReport.platform == platform)
         count_q = count_q.where(EvidenceReport.platform == platform)

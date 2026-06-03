@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { PlatformLabel } from '@/components/platforms/PlatformLabel'
 import { AbuseCategoryBadges } from '@/components/abuse/AbuseCategoryBadges'
@@ -22,11 +22,14 @@ function evidenceImageUrl(screenshotPath: string | null): string | null {
 
 export default function EvidencePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const targetFilter = searchParams.get('target') || ''
+  const targetIdFilter = searchParams.get('target_id') || ''
   const [items, setItems] = useState<EvidenceListItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(targetFilter)
   const [severity, setSeverity] = useState('')
   const [escalatedOnly, setEscalatedOnly] = useState(false)
   const [backfilling, setBackfilling] = useState(false)
@@ -42,6 +45,7 @@ export default function EvidencePage() {
         search: search.trim() || undefined,
         severity: severity || undefined,
         is_escalated: escalatedOnly ? true : undefined,
+        target_id: targetIdFilter || undefined,
       })
       setItems(data.items)
       setTotal(data.total)
@@ -50,7 +54,7 @@ export default function EvidencePage() {
     } finally {
       setLoading(false)
     }
-  }, [search, severity, escalatedOnly])
+  }, [search, severity, escalatedOnly, targetIdFilter])
 
   useEffect(() => {
     if (!isAuthenticated()) {

@@ -138,6 +138,7 @@ export async function listEvidence(
     severity?: string
     platform?: string
     is_escalated?: boolean
+    target_id?: string
   },
 ): Promise<PaginatedResponse<EvidenceListItem>> {
   const params = new URLSearchParams({
@@ -150,6 +151,7 @@ export async function listEvidence(
   if (filters?.is_escalated !== undefined) {
     params.set('is_escalated', String(filters.is_escalated))
   }
+  if (filters?.target_id) params.set('target_id', filters.target_id)
   return request<PaginatedResponse<EvidenceListItem>>(
     `/evidence?${params.toString()}`,
     {},
