@@ -39,8 +39,13 @@ def emoji_ratio(text: str) -> float:
     return emoji_chars / len(non_ws)
 
 
-def is_predominantly_emoji(text: str, threshold: float = 0.6) -> bool:
-    """True when most of the visible content is emoji (e.g. '❤️❤️❤️' or 'God bless ❤️❤️❤️')."""
+def is_predominantly_emoji(text: str, threshold: float = 0.35) -> bool:
+    """True when a significant portion of the visible content is emoji.
+
+    Lowered from 0.6 to 0.35 to catch posts like 'Beautiful you 👸💗' or
+    'Straight from the ❤️ always rooting for you' that have some emoji but
+    are clearly benign and don't warrant ML toxicity scoring.
+    """
     return emoji_ratio(text) >= threshold
 
 
@@ -57,6 +62,7 @@ def normalize_for_abuse_detection(text: str) -> str:
     t = re.sub(r"\bf[\*#@$!1]+c?k\b", "fuck", t, flags=re.IGNORECASE)
     t = re.sub(r"\bf\s*u\s*c\s*k\b", "fuck", t, flags=re.IGNORECASE)
     t = re.sub(r"\bsh[\*#!1@$]+t\b", "shit", t, flags=re.IGNORECASE)
+    t = re.sub(r"\bbullsh[\*#!1@$]+t\b", "bullshit", t, flags=re.IGNORECASE)
     t = re.sub(r"\bb[\*#!1@$]+tch\b", "bitch", t, flags=re.IGNORECASE)
     # Collapse punctuation between letters (f*u*c*k -> fuck)
     t = re.sub(r"([a-z])[\*#@$!1]+([a-z])", r"\1\2", t)

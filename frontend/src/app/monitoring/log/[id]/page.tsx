@@ -85,7 +85,11 @@ export default function CrawlLogResultsPage() {
                 if (data.evidence.length > 0) {
                   scrollToEvidence()
                 } else {
-                  router.push('/evidence')
+                  // Navigate to evidence page filtered by this target
+                  const params = new URLSearchParams()
+                  if (data.target_username) params.set('target', data.target_username)
+                  if (data.target_id) params.set('target_id', data.target_id)
+                  router.push(`/evidence?${params.toString()}`)
                 }
               }}
               clickable
@@ -97,7 +101,11 @@ export default function CrawlLogResultsPage() {
                 if (data.evidence.length > 0) {
                   scrollToEvidence()
                 } else {
-                  router.push('/evidence')
+                  // Navigate to evidence page filtered by this target
+                  const params = new URLSearchParams()
+                  if (data.target_username) params.set('target', data.target_username)
+                  if (data.target_id) params.set('target_id', data.target_id)
+                  router.push(`/evidence?${params.toString()}`)
                 }
               }}
               clickable

@@ -64,7 +64,13 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
     emoji_dominant = is_predominantly_emoji(text)
     keyword_clean = not kw.is_abusive and not kw.matched_keywords
 
-    if emoji_dominant and keyword_clean:
+    # Also detect hashtag-heavy promotional/benign posts (e.g. horoscope posts
+    # with 5+ hashtags) which ML models often misclassify as toxic.
+    import re as _re
+    hashtag_count = len(_re.findall(r'#\w+', text))
+    is_hashtag_promo = hashtag_count >= 4 and keyword_clean
+
+    if (emoji_dominant or is_hashtag_promo) and keyword_clean:
         return ClassificationResult(
             is_abusive=False,
             confidence_score=0.0,
@@ -95,9 +101,11 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
             # No keyword evidence — require a much higher ML consensus before
             # overriding the clean keyword verdict (prevents emoji/benign-phrase
             # false positives from single-model misfires).
-            # All available ML scores must agree above 0.90.
-            ml_override_threshold = 0.90
-            if all(s >= ml_override_threshold for s in scores):
+            # All available ML scores must agree above 0.93 AND we need at least
+            # 2 models to agree (single-model hallucinations are common on
+            # benign content like horoscopes, compliments, emojis).
+            ml_override_threshold = 0.93
+            if len(scores) >= 2 and all(s >= ml_override_threshold for s in scores):
                 combined = max(scores)
             # else keep combined = 0.0 (keyword verdict)
         else:
@@ -124,7 +132,12 @@ def classify_comment(text: str, language_hint: Optional[str] = None) -> Classifi
     if ml_score and ml_score >= 0.7 and not flags:
         flags["ml_toxic"] = True
 
-    matched = kw.matched_keywords + (["ml_toxic"] if ml_score and ml_score >= 0.65 else [])
+    # Only add ml_toxic to matched_keywords when keyword evidence exists.
+    # Without keyword evidence, ml_toxic maps to hate_speech via category aliases
+    # and causes false positives on benign content (horoscopes, compliments, emojis).
+    matched = kw.matched_keywords + (
+        ["ml_toxic"] if ml_score and ml_score >= 0.65 and not keyword_clean else []
+    )
     # hate_speech from ML alone requires both keyword evidence AND a very high score,
     # or multi-model consensus at 0.95+. Prevents benign emoji comments being labelled.
     ml_hate_speech = (
