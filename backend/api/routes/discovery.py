@@ -9,9 +9,9 @@ from datetime import date, datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +29,7 @@ router = APIRouter()
 # ── Request models ───────────────────────────────────────────
 
 class DiscoveryRunRequest(BaseModel):
-    max_count: int = 25
+    max_count: int = Field(default=25, ge=1, le=500)
     platforms: Optional[list[str]] = None
 
 
@@ -150,8 +150,9 @@ async def trigger_discovery(
     _user: User = Depends(require_admin),
 ) -> dict:
     """Manually trigger a discovery run (returns immediately)."""
-    if discovery_state.status == "running":
+    if discovery_state.status in ("running", "paused"):
         raise HTTPException(status_code=409, detail="Discovery is already running")
+    discovery_state.mark_starting(body.max_count)
     asyncio.create_task(_run_discovery_background(body.max_count))
     return {"status": "started", "message": f"Discovery started (max: {body.max_count} profiles)"}
 
@@ -195,6 +196,7 @@ async def get_discovery_status(
 
 @router.get("/logs/stream")
 async def stream_discovery_logs(
+    request: Request,
     _user: User = Depends(get_current_user),
 ):
     """SSE endpoint for streaming discovery logs."""
@@ -207,6 +209,8 @@ async def stream_discovery_logs(
             last_index = log["index"]
         # Stream new logs
         while True:
+            if await request.is_disconnected():
+                break
             await asyncio.sleep(0.5)
             new_logs = discovery_state.get_logs(since_index=last_index)
             for log in new_logs:

@@ -16,6 +16,7 @@ class DiscoveryState:
 
     def __init__(self) -> None:
         self.status: str = "idle"
+        # asyncio.Event is loop-agnostic on Python 3.10+; safe to create at import time.
         self._pause_event: asyncio.Event = asyncio.Event()
         self._pause_event.set()  # Not paused by default
         self.max_count: int = 25
@@ -23,6 +24,19 @@ class DiscoveryState:
         self.current_run_id: Optional[str] = None
         self._logs: collections.deque = collections.deque(maxlen=500)
         self._log_index: int = 0
+
+    def mark_starting(self, max_count: int) -> None:
+        """Set status to running synchronously before spawning the background task.
+
+        This closes the race window where a second /run request could slip
+        through between create_task() and the actual start() call.
+        """
+        self.status = "running"
+        self.max_count = max_count
+        self.progress_count = 0
+        self._pause_event.set()
+        self._logs.clear()
+        self._log_index = 0
 
     def start(self, max_count: int, run_id: str) -> None:
         """Initialize state for a new discovery run."""
@@ -84,7 +98,7 @@ class DiscoveryState:
 
     def check_should_stop(self) -> bool:
         """Return True if the discovery should stop."""
-        return self.status in ("stopped",)
+        return self.status in ("stopped", "idle")
 
     async def wait_if_paused(self) -> None:
         """Block until the pause event is set (unpaused)."""
