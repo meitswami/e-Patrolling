@@ -1,17 +1,20 @@
 """
 Auto-Discovery Crawler Service
 ================================
-Discovers female, blue-tick, 10K+ follower accounts from social media platforms.
-Infers region from bio text.
-Runs daily via scheduler.
+Discovers social media accounts based on configurable criteria:
+- Follower thresholds (min/max)
+- Gender filter
+- Verification status
+- Region targeting
+- Custom hashtags and content types
 
-NOTE: This uses profile-level scraping (not comment crawling).
-Each platform adapter's discover_profiles() is called.
-Falls back to mock data for platforms without real discovery adapters yet.
+Supports Instagram web API with fallback to Playwright DOM scraping.
+Runs on a configurable schedule or via manual trigger.
 """
 
 from __future__ import annotations
 
+import random
 import re
 import uuid
 from datetime import date, datetime, timezone
@@ -26,16 +29,38 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# ── Minimum criteria for discovery ──────────────────────────
-MIN_FOLLOWERS = 10_000
-REQUIRE_VERIFIED = True
-REQUIRE_FEMALE = True
-
-# Platforms to run discovery on
+# ── Default platforms for discovery ─────────────────────────
 DISCOVERY_PLATFORMS = [
     PlatformType.INSTAGRAM,
     PlatformType.TWITTER,
     PlatformType.FACEBOOK,
+]
+
+# ── Content type to hashtag mapping ─────────────────────────
+CONTENT_TYPE_HASHTAGS: dict[str, list[str]] = {
+    "Model": ["indianmodel", "indiansupermodel", "modelindia", "indianfashionmodel", "modelphotoshoot"],
+    "Actor": ["indianactress", "bollywoodactress", "indianactor", "tollywoodactress", "kollywoodactress"],
+    "Influencer": ["indianinfluencer", "indianfemaleinfluencer", "influencerindia", "contentcreatorindia"],
+    "Blogger": ["indianblogger", "indianfashionblogger", "indianbeautyblogger", "lifestyleblogger"],
+    "Singer": ["indiansinger", "bollywoodsinger", "playbacksinger", "indianmusician"],
+    "Dancer": ["indiandancer", "classicaldancer", "bollywooddancer", "dancersofindia"],
+    "Journalist": ["indianjournalist", "newsanchor", "mediapersonality", "indianmedia"],
+    "Sportsperson": ["indiansportswomen", "indianathlete", "womeninsports", "sportsindia"],
+}
+
+# ── Major Indian cities (50+) ──────────────────────────────
+INDIAN_CITIES = [
+    "Mumbai", "Delhi", "Bangalore", "Bengaluru", "Hyderabad", "Ahmedabad",
+    "Chennai", "Kolkata", "Pune", "Jaipur", "Lucknow", "Kanpur",
+    "Nagpur", "Indore", "Thane", "Bhopal", "Visakhapatnam", "Patna",
+    "Vadodara", "Ghaziabad", "Ludhiana", "Agra", "Nashik", "Faridabad",
+    "Meerut", "Rajkot", "Kalyan", "Vasai", "Varanasi", "Srinagar",
+    "Aurangabad", "Dhanbad", "Amritsar", "Navi Mumbai", "Allahabad",
+    "Ranchi", "Howrah", "Coimbatore", "Jabalpur", "Gwalior",
+    "Vijayawada", "Jodhpur", "Madurai", "Raipur", "Kochi",
+    "Chandigarh", "Thiruvananthapuram", "Dehradun", "Mysore", "Mysuru",
+    "Gurgaon", "Gurugram", "Noida", "Bhubaneswar", "Mangalore",
+    "Udaipur", "Jamshedpur", "Shimla", "Surat", "Tiruchirappalli",
 ]
 
 # ── India region keywords for bio parsing ───────────────────
@@ -100,6 +125,39 @@ def infer_gender_from_bio(bio: str, display_name: str = "") -> tuple[str, float]
     return "unknown", 0.0
 
 
+def _build_hashtags_from_options(
+    hashtags: list[str] | None,
+    content_types: list[str] | None,
+) -> list[str]:
+    """Build the list of hashtags to search based on user options."""
+    result: list[str] = []
+
+    if hashtags:
+        result.extend(hashtags)
+
+    if content_types:
+        for ct in content_types:
+            mapped = CONTENT_TYPE_HASHTAGS.get(ct, [])
+            result.extend(mapped)
+
+    if not result:
+        # Default hashtags
+        result = [
+            "indianfemaleinfluencer", "indianmodel", "indianactress",
+            "bollywood", "indianfashionblogger", "indianbeautyblogger",
+        ]
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for h in result:
+        h_lower = h.lower().strip().lstrip("#")
+        if h_lower not in seen:
+            seen.add(h_lower)
+            deduped.append(h_lower)
+    return deduped
+
+
 # ── Platform-specific discovery adapters ────────────────────
 
 async def _discover_instagram(
@@ -108,10 +166,13 @@ async def _discover_instagram(
     criteria: dict,
 ) -> list[dict]:
     """
-    Discover verified female accounts on Instagram with 10K+ followers.
-    Uses Playwright to search hashtags / explore if session available.
+    Discover accounts on Instagram matching criteria.
+    Strategy:
+      1. Try Instagram web API endpoints (faster, more reliable)
+      2. Fall back to Playwright DOM scraping if API fails
     """
     import asyncio
+
     from crawlers.instagram.session_manager import InstagramSessionManager
     from services.discovery_state import discovery_state
 
@@ -123,40 +184,289 @@ async def _discover_instagram(
         )
         return []
 
-    discovery_state.emit_log("Instagram: Session found, launching browser for profile discovery...")
+    discovery_state.emit_log("Instagram: Session found, attempting API-based discovery...")
+
+    hashtags = _build_hashtags_from_options(
+        criteria.get("hashtags"),
+        criteria.get("content_types"),
+    )
 
     profiles: list[dict] = []
-    hashtags = [
-        "indianfemaleinfluencer", "indianmodel", "indianactress",
-        "bollywood", "indianfashionblogger", "indianbeautyblogger",
-    ]
+    api_success = False
+
+    # Strategy 1: Instagram Web API approach
+    try:
+        api_profiles = await _discover_instagram_api(
+            session_mgr, hashtags, criteria, discovery_state
+        )
+        if api_profiles:
+            profiles.extend(api_profiles)
+            api_success = True
+            discovery_state.emit_log(
+                f"Instagram API: Found {len(api_profiles)} profiles via web API"
+            )
+    except Exception as exc:
+        discovery_state.emit_log(
+            f"Instagram API: Failed ({str(exc)[:100]}), falling back to browser...",
+            level="warning",
+        )
+        logger.warning("Instagram API discovery failed: %s", exc)
+
+    # Strategy 2: Fallback to Playwright DOM scraping
+    if not api_success:
+        discovery_state.emit_log("Instagram: Using browser-based discovery (fallback)...")
+        try:
+            dom_profiles = await _discover_instagram_dom(
+                hashtags, criteria, discovery_state
+            )
+            profiles.extend(dom_profiles)
+        except Exception as exc:
+            discovery_state.emit_log(
+                f"Instagram DOM: Playwright error - {str(exc)[:150]}",
+                level="error",
+            )
+            logger.error("Instagram DOM discovery error: %s", exc, exc_info=True)
+
+    discovery_state.emit_log(f"Instagram: Discovery complete, found {len(profiles)} profiles")
+    return profiles
+
+
+async def _discover_instagram_api(
+    session_mgr,
+    hashtags: list[str],
+    criteria: dict,
+    discovery_state,
+) -> list[dict]:
+    """
+    Use Instagram web API endpoints to discover profiles from hashtags.
+    Endpoints:
+      - /api/v1/tags/web_info/?tag_name={tag} - get posts for a hashtag
+      - /api/v1/users/web_profile_info/?username={user} - get profile info
+    """
+    import asyncio
+    import json as json_mod
+
+    import httpx
+
+    profiles: list[dict] = []
+    seen_usernames: set[str] = set()
+
+    # Load session cookies if available
+    cookies = {}
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "X-IG-App-ID": "936619743392459",
+        "X-Requested-With": "XMLHttpRequest",
+        "Accept": "application/json",
+    }
+
+    # Try to load cookies from saved session
+    try:
+        session_file = session_mgr._session_file if hasattr(session_mgr, "_session_file") else None
+        if session_file and session_file.exists():
+            data = json_mod.loads(session_file.read_text())
+            if isinstance(data, dict) and "cookies" in data:
+                for cookie in data["cookies"]:
+                    if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
+                        cookies[cookie["name"]] = cookie["value"]
+            elif isinstance(data, list):
+                for cookie in data:
+                    if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
+                        cookies[cookie["name"]] = cookie["value"]
+    except Exception as exc:
+        logger.debug("Could not load Instagram session cookies: %s", exc)
+
+    if not cookies:
+        # Try alternate session file paths
+        try:
+            import pathlib
+            possible_paths = [
+                pathlib.Path("storage/instagram_session.json"),
+                pathlib.Path("backend/storage/instagram_session.json"),
+            ]
+            for p in possible_paths:
+                if p.exists():
+                    data = json_mod.loads(p.read_text())
+                    if isinstance(data, dict) and "cookies" in data:
+                        for cookie in data["cookies"]:
+                            if isinstance(cookie, dict) and "name" in cookie:
+                                cookies[cookie["name"]] = cookie["value"]
+                    break
+        except Exception:
+            pass
+
+    async with httpx.AsyncClient(
+        headers=headers,
+        cookies=cookies,
+        timeout=httpx.Timeout(15.0),
+        follow_redirects=True,
+    ) as client:
+        for hashtag in hashtags:
+            if discovery_state.check_should_stop():
+                break
+            await discovery_state.wait_if_paused()
+
+            discovery_state.emit_log(f"Instagram API: Fetching #{hashtag}...")
+
+            try:
+                # Fetch hashtag info with top posts
+                tag_url = f"https://www.instagram.com/api/v1/tags/web_info/?tag_name={hashtag}"
+                resp = await client.get(tag_url)
+
+                if resp.status_code != 200:
+                    discovery_state.emit_log(
+                        f"Instagram API: #{hashtag} returned status {resp.status_code}",
+                        level="warning",
+                    )
+                    # Rate limited or blocked - stop API approach
+                    if resp.status_code in (401, 403, 429):
+                        raise Exception(f"API blocked with status {resp.status_code}")
+                    continue
+
+                tag_data = resp.json()
+
+                # Extract usernames from top/recent posts
+                usernames_to_check: list[str] = []
+                # Navigate the response structure for media items
+                sections = (
+                    tag_data.get("data", {}).get("top", {}).get("sections", [])
+                    or tag_data.get("data", {}).get("recent", {}).get("sections", [])
+                    or []
+                )
+                for section in sections:
+                    medias = section.get("layout_content", {}).get("medias", [])
+                    for media_item in medias:
+                        media = media_item.get("media", {})
+                        user = media.get("user", {})
+                        username = user.get("username")
+                        if username and username not in seen_usernames:
+                            usernames_to_check.append(username)
+                            seen_usernames.add(username)
+
+                # Also try flat media list
+                if not usernames_to_check:
+                    top_posts = tag_data.get("top_posts", []) or tag_data.get("ranked_items", [])
+                    for post in top_posts:
+                        user = post.get("user", {}) or post.get("owner", {})
+                        username = user.get("username")
+                        if username and username not in seen_usernames:
+                            usernames_to_check.append(username)
+                            seen_usernames.add(username)
+
+                discovery_state.emit_log(
+                    f"Instagram API: Found {len(usernames_to_check)} users from #{hashtag}"
+                )
+
+                # Fetch profile info for each user
+                for username in usernames_to_check[:15]:  # Limit per hashtag
+                    if discovery_state.check_should_stop():
+                        break
+                    await discovery_state.wait_if_paused()
+
+                    # Random delay between requests (2-5 seconds)
+                    await asyncio.sleep(random.uniform(2.0, 5.0))
+
+                    try:
+                        profile_url = (
+                            f"https://www.instagram.com/api/v1/users/web_profile_info/"
+                            f"?username={username}"
+                        )
+                        profile_resp = await client.get(profile_url)
+
+                        if profile_resp.status_code != 200:
+                            continue
+
+                        profile_data = profile_resp.json()
+                        user_data = profile_data.get("data", {}).get("user", {})
+                        if not user_data:
+                            user_data = profile_data.get("user", {})
+                        if not user_data:
+                            continue
+
+                        follower_count = user_data.get("edge_followed_by", {}).get("count", 0)
+                        if not follower_count:
+                            follower_count = user_data.get("follower_count", 0)
+
+                        is_verified = user_data.get("is_verified", False)
+                        full_name = user_data.get("full_name", "")
+                        bio = user_data.get("biography", "")
+                        avatar = user_data.get("profile_pic_url_hd") or user_data.get("profile_pic_url", "")
+
+                        profiles.append({
+                            "username": username,
+                            "display_name": full_name or None,
+                            "profile_url": f"https://www.instagram.com/{username}/",
+                            "avatar_url": avatar or None,
+                            "bio": bio,
+                            "follower_count": follower_count,
+                            "is_verified": is_verified,
+                        })
+
+                        discovery_state.emit_log(
+                            f"Instagram API: @{username} "
+                            f"({_format_followers(follower_count)} followers)"
+                        )
+
+                    except Exception as exc:
+                        logger.debug("Error fetching profile @%s: %s", username, exc)
+                        continue
+
+            except Exception as exc:
+                if "API blocked" in str(exc):
+                    raise
+                discovery_state.emit_log(
+                    f"Instagram API: Error on #{hashtag}: {str(exc)[:100]}",
+                    level="warning",
+                )
+                continue
+
+            # Random delay between hashtags
+            await asyncio.sleep(random.uniform(2.0, 4.0))
+
+    return profiles
+
+
+async def _discover_instagram_dom(
+    hashtags: list[str],
+    criteria: dict,
+    discovery_state,
+) -> list[dict]:
+    """
+    Fallback: Discover profiles by visiting hashtag pages with Playwright.
+    """
+    import asyncio
+
+    from crawlers.instagram.adapter import InstagramCrawler
+
+    profiles: list[dict] = []
+    seen_usernames: set[str] = set()
 
     try:
-        from crawlers.instagram.adapter import InstagramCrawler
-
         crawler = InstagramCrawler()
         setup_ok = await crawler.setup_session()
         if not setup_ok:
             discovery_state.emit_log(
-                "Instagram: Failed to launch browser session. Ensure Playwright browsers are installed.",
+                "Instagram DOM: Failed to launch browser session.",
                 level="error",
             )
             return []
 
         page = crawler._page
         if not page:
-            discovery_state.emit_log("Instagram: No page available after setup.", level="error")
+            discovery_state.emit_log("Instagram DOM: No page available after setup.", level="error")
             await crawler.teardown_session()
             return []
-
-        seen_usernames: set[str] = set()
 
         for hashtag in hashtags:
             if discovery_state.check_should_stop():
                 break
             await discovery_state.wait_if_paused()
 
-            discovery_state.emit_log(f"Instagram: Exploring #{hashtag}...")
+            discovery_state.emit_log(f"Instagram DOM: Exploring #{hashtag}...")
 
             try:
                 url = f"https://www.instagram.com/explore/tags/{hashtag}/"
@@ -166,7 +476,7 @@ async def _discover_instagram(
                 # Find profile links from the explore page
                 links = await page.query_selector_all("a[href*='/p/'], a[href*='/reel/']")
                 post_urls = []
-                for link in links[:12]:  # Limit posts per hashtag
+                for link in links[:12]:
                     href = await link.get_attribute("href")
                     if href and ("/p/" in href or "/reel/" in href):
                         if href.startswith("/"):
@@ -174,24 +484,18 @@ async def _discover_instagram(
                         post_urls.append(href)
 
                 discovery_state.emit_log(
-                    f"Instagram: Found {len(post_urls)} posts from #{hashtag}"
+                    f"Instagram DOM: Found {len(post_urls)} posts from #{hashtag}"
                 )
 
-                # Visit each post to find the profile owner
                 for post_url in post_urls:
                     if discovery_state.check_should_stop():
                         break
                     await discovery_state.wait_if_paused()
 
-                    if discovery_state.progress_count >= criteria.get("min_followers", 0) // 1000 * 5:
-                        # Rough heuristic to avoid over-crawling
-                        pass
-
                     try:
                         await page.goto(post_url, wait_until="domcontentloaded", timeout=20000)
                         await asyncio.sleep(2)
 
-                        # Extract profile username from the post page
                         header_link = await page.query_selector(
                             "header a[href^='/'], article a[href^='/']"
                         )
@@ -210,7 +514,6 @@ async def _discover_instagram(
 
                         seen_usernames.add(username)
 
-                        # Navigate to profile page to get details
                         await page.goto(
                             f"https://www.instagram.com/{username}/",
                             wait_until="domcontentloaded",
@@ -218,37 +521,36 @@ async def _discover_instagram(
                         )
                         await asyncio.sleep(2)
 
-                        # Parse profile info from the page
                         profile_data = await _parse_instagram_profile(page, username)
                         if profile_data:
                             profiles.append(profile_data)
                             discovery_state.emit_log(
-                                f"Instagram: Found @{username} "
+                                f"Instagram DOM: Found @{username} "
                                 f"({_format_followers(profile_data.get('follower_count', 0))} followers)"
                             )
 
-                        await asyncio.sleep(1.5)
+                        # Random delay between profile visits
+                        await asyncio.sleep(random.uniform(1.5, 3.5))
                     except Exception as exc:
                         logger.debug("Error visiting post %s: %s", post_url, exc)
                         continue
 
             except Exception as exc:
                 discovery_state.emit_log(
-                    f"Instagram: Error exploring #{hashtag}: {str(exc)[:100]}",
+                    f"Instagram DOM: Error exploring #{hashtag}: {str(exc)[:100]}",
                     level="warning",
                 )
                 continue
 
         await crawler.teardown_session()
-        discovery_state.emit_log(f"Instagram: Discovery complete, found {len(profiles)} profiles")
 
     except Exception as exc:
         discovery_state.emit_log(
-            f"Instagram: Playwright error - {str(exc)[:150]}. "
+            f"Instagram DOM: Playwright error - {str(exc)[:150]}. "
             "Ensure browsers are installed: python -m playwright install chromium",
             level="error",
         )
-        logger.error("Instagram discovery Playwright error: %s", exc, exc_info=True)
+        logger.error("Instagram DOM discovery error: %s", exc, exc_info=True)
 
     return profiles
 
@@ -278,7 +580,6 @@ async def _parse_instagram_profile(page, username: str) -> Optional[dict]:
                 for span in spans:
                     title = await span.get_attribute("title")
                     if title and title.replace(",", "").isdigit():
-                        # Check if this is the followers span
                         parent = await span.evaluate_handle("el => el.closest('a') || el.closest('li')")
                         if parent:
                             inner = await parent.inner_text()
@@ -370,7 +671,7 @@ async def _discover_twitter(
     criteria: dict,
 ) -> list[dict]:
     """
-    Discover verified female accounts on Twitter/X.
+    Discover verified accounts on Twitter/X.
     Uses Twitter API Bearer token if available.
     """
     from configs.settings import settings
@@ -378,10 +679,7 @@ async def _discover_twitter(
         logger.info("Twitter discovery: no bearer token configured, skipping")
         return []
 
-    logger.info("Twitter discovery: searching verified female accounts via API")
-    # NOTE: Real implementation would use Twitter v2 API:
-    # GET /2/users/search with filters: is_verified, followers_count>=10000
-    # Then check bio for female/she-her keywords
+    logger.info("Twitter discovery: searching verified accounts via API")
     return []
 
 
@@ -391,7 +689,7 @@ async def _discover_facebook(
     criteria: dict,
 ) -> list[dict]:
     """
-    Discover verified female accounts on Facebook.
+    Discover verified accounts on Facebook.
     Uses Graph API token if available.
     """
     from configs.settings import settings
@@ -399,7 +697,7 @@ async def _discover_facebook(
         logger.info("Facebook discovery: no access token configured, skipping")
         return []
 
-    logger.info("Facebook discovery: searching verified female accounts via Graph API")
+    logger.info("Facebook discovery: searching verified accounts via Graph API")
     return []
 
 
@@ -415,24 +713,44 @@ async def run_discovery(
     *,
     triggered_by: str = "scheduler",
     platforms: list[PlatformType] | None = None,
+    platforms_str: list[str] | None = None,
     max_count: int = 25,
+    min_followers: int = 10_000,
+    max_followers: int | None = None,
+    gender: str = "female",
+    require_verified: bool = True,
+    regions: list[str] | None = None,
+    hashtags: list[str] | None = None,
+    content_types: list[str] | None = None,
 ) -> DiscoveryRun:
     """
-    Main entry point: run auto-discovery across all configured platforms.
+    Main entry point: run auto-discovery across configured platforms.
     Saves discovered profiles to discovered_targets table.
     Returns the DiscoveryRun record.
+
+    All filtering criteria are now passed as parameters instead of
+    using hardcoded constants.
     """
     from services.discovery_state import discovery_state
+
+    # Resolve platforms from string list if provided
+    if platforms_str and not platforms:
+        platform_map = {p.value: p for p in PlatformType}
+        platforms = [platform_map[p] for p in platforms_str if p in platform_map]
 
     run_platforms = platforms or DISCOVERY_PLATFORMS
     run_id = uuid.uuid4()
     today = date.today()
 
     criteria = {
-        "min_followers": MIN_FOLLOWERS,
-        "require_verified": REQUIRE_VERIFIED,
-        "require_female": REQUIRE_FEMALE,
+        "min_followers": min_followers,
+        "max_followers": max_followers,
+        "require_verified": require_verified,
+        "gender": gender,
         "platforms": [p.value for p in run_platforms],
+        "regions": regions,
+        "hashtags": hashtags,
+        "content_types": content_types,
     }
 
     # Initialize discovery state
@@ -478,7 +796,7 @@ async def run_discovery(
                     level="error",
                 )
 
-        # Deduplicate against existing target_accounts and already-discovered today
+        # Deduplicate against existing target_accounts and ALL discovered_targets
         existing_usernames: set[tuple[str, str]] = set()
         existing_q = await session.execute(
             select(TargetAccount.username, TargetAccount.platform)
@@ -486,9 +804,9 @@ async def run_discovery(
         for row in existing_q.all():
             existing_usernames.add((row[0].lower(), row[1].value))
 
+        # Check ALL DiscoveredTarget entries (not just today)
         already_discovered_q = await session.execute(
             select(DiscoveredTarget.username, DiscoveredTarget.platform)
-            .where(DiscoveredTarget.discovered_on == today)
         )
         for row in already_discovered_q.all():
             existing_usernames.add((row[0].lower(), row[1].value))
@@ -510,15 +828,33 @@ async def run_discovery(
 
             bio = profile.get("bio") or ""
             region, region_conf = infer_region_from_bio(bio)
-            gender, _ = infer_gender_from_bio(bio, profile.get("display_name") or "")
+            inferred_gender, _ = infer_gender_from_bio(bio, profile.get("display_name") or "")
 
-            # Only save female accounts matching criteria
-            if REQUIRE_FEMALE and gender not in ("female", "unknown"):
+            # Apply gender filter based on criteria
+            if gender == "female" and inferred_gender not in ("female", "unknown"):
                 continue
-            if profile.get("follower_count", 0) < MIN_FOLLOWERS:
+            elif gender == "male" and inferred_gender not in ("male", "unknown"):
                 continue
-            if REQUIRE_VERIFIED and not profile.get("is_verified", False):
+            # gender == "all" passes everything through
+
+            # Apply follower count filters
+            profile_followers = profile.get("follower_count", 0)
+            if profile_followers < min_followers:
                 continue
+            if max_followers is not None and profile_followers > max_followers:
+                continue
+
+            # Apply verification filter
+            if require_verified and not profile.get("is_verified", False):
+                continue
+
+            # Apply region filter if specified
+            if regions and region:
+                region_match = any(
+                    r.lower() in region.lower() for r in regions
+                )
+                if not region_match:
+                    continue
 
             dt = DiscoveredTarget(
                 platform=profile["platform"],
@@ -527,9 +863,9 @@ async def run_discovery(
                 profile_url=profile.get("profile_url", f"https://{profile['platform'].value}.com/{profile['username']}"),
                 avatar_url=profile.get("avatar_url"),
                 bio=bio or None,
-                follower_count=profile.get("follower_count", 0),
+                follower_count=profile_followers,
                 is_verified=profile.get("is_verified", False),
-                gender=gender,
+                gender=inferred_gender,
                 inferred_region=region,
                 region_confidence=region_conf,
                 region_raw=bio[:200] if bio else None,
@@ -544,7 +880,7 @@ async def run_discovery(
             discovery_state.increment_progress()
             discovery_state.emit_log(
                 f"Discovered @{profile['username']} "
-                f"({_format_followers(profile.get('follower_count', 0))} followers)"
+                f"({_format_followers(profile_followers)} followers)"
             )
 
         run.total_found = total_found
