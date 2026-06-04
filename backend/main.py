@@ -266,8 +266,14 @@ def register_routers() -> None:
     from api.routes.lexicon import router as lexicon_router
     from api.routes.discovery import router as discovery_router
     from api.routes.target_import import router as target_import_router
+    from api.routes.profile_preview import router as profile_preview_router
 
     app.include_router(public_router, prefix=f"{PREFIX}/public", tags=["Public Website"])
+    app.include_router(
+        profile_preview_router,
+        prefix=f"{PREFIX}/public",
+        tags=["Public Website"],
+    )
     app.include_router(
         website_requests_router,
         prefix=f"{PREFIX}/website-requests",

@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import { getIndiaLocations, submitSafetyRequest } from '@/lib/api'
+import { getIndiaLocations, submitSafetyRequest, type ProfilePreviewData } from '@/lib/api'
+import { ProfilePreviewDropdown } from '@/components/ProfilePreviewDropdown'
 
 export function SafetyRequestForm() {
   const [profiles, setProfiles] = useState([''])
@@ -101,12 +102,15 @@ export function SafetyRequestForm() {
         </label>
         {profiles.map((value, index) => (
           <div key={index} className="flex gap-2">
-            <input
-              type="text"
+            <ProfilePreviewDropdown
               value={value}
-              onChange={(e) => updateProfile(index, e.target.value)}
+              onChange={(v) => updateProfile(index, v)}
+              onProfileSelect={(profile) => {
+                updateProfile(index, profile.profile_url || `@${profile.username}`)
+              }}
+              variant="light"
               placeholder="e.g. @username or https://instagram.com/username"
-              className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+              className="flex-1"
             />
             {profiles.length > 1 && (
               <button
