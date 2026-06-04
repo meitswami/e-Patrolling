@@ -1,13 +1,17 @@
 """Discovery API — auto-discovered targets list, export, and manual trigger."""
 
+import asyncio
 import csv
 import io
+import json
 import math
 from datetime import date, datetime, timezone
+from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,8 +21,16 @@ from database.connection import get_session
 from database.models import User
 from database.models_discovery import DiscoveredTarget, DiscoveryRun
 from services.discovery_crawler import convert_discovered_to_target, run_discovery
+from services.discovery_state import discovery_state
 
 router = APIRouter()
+
+
+# ── Request models ───────────────────────────────────────────
+
+class DiscoveryRunRequest(BaseModel):
+    max_count: int = Field(default=25, ge=1, le=500)
+    platforms: Optional[list[str]] = None
 
 
 # ── List discovered targets (date-wise) ─────────────────────
@@ -119,19 +131,105 @@ async def list_discovery_runs(
 
 # ── Trigger discovery manually ───────────────────────────────
 
+async def _run_discovery_background(max_count: int) -> None:
+    """Run discovery in a background task with its own database session."""
+    from database.connection import async_session_factory
+
+    if async_session_factory is None:
+        discovery_state.emit_log("Database not initialized", level="error")
+        discovery_state.reset()
+        return
+
+    async with async_session_factory() as session:
+        await run_discovery(session, triggered_by="manual", max_count=max_count)
+
+
 @router.post("/run")
 async def trigger_discovery(
-    session: AsyncSession = Depends(get_session),
+    body: DiscoveryRunRequest = DiscoveryRunRequest(),
     _user: User = Depends(require_admin),
 ) -> dict:
-    """Manually trigger a discovery run."""
-    run = await run_discovery(session, triggered_by="manual")
-    return {
-        "status": "completed",
-        "run_id": str(run.id),
-        "total_found": run.total_found,
-        "message": f"Discovery complete: {run.total_found} new profiles found",
-    }
+    """Manually trigger a discovery run (returns immediately)."""
+    if discovery_state.status in ("running", "paused"):
+        raise HTTPException(status_code=409, detail="Discovery is already running")
+    discovery_state.mark_starting(body.max_count)
+    asyncio.create_task(_run_discovery_background(body.max_count))
+    return {"status": "started", "message": f"Discovery started (max: {body.max_count} profiles)"}
+
+
+# ── Discovery control endpoints ──────────────────────────────
+
+@router.post("/pause")
+async def pause_discovery(
+    _user: User = Depends(require_admin),
+) -> dict:
+    """Pause a running discovery."""
+    discovery_state.pause()
+    return {"status": "paused"}
+
+
+@router.post("/resume")
+async def resume_discovery(
+    _user: User = Depends(require_admin),
+) -> dict:
+    """Resume a paused discovery."""
+    discovery_state.resume()
+    return {"status": "resumed"}
+
+
+@router.post("/stop")
+async def stop_discovery(
+    _user: User = Depends(require_admin),
+) -> dict:
+    """Stop the running discovery."""
+    discovery_state.stop()
+    return {"status": "stopped"}
+
+
+@router.get("/status")
+async def get_discovery_status(
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Return current discovery state."""
+    return discovery_state.get_status()
+
+
+@router.get("/logs/stream")
+async def stream_discovery_logs(
+    request: Request,
+    _user: User = Depends(get_current_user),
+):
+    """SSE endpoint for streaming discovery logs."""
+    async def event_generator():
+        last_index = 0
+        # Replay existing logs
+        logs = discovery_state.get_logs(since_index=0)
+        for log in logs:
+            yield f"data: {json.dumps(log)}\n\n"
+            last_index = log["index"]
+        # Stream new logs
+        while True:
+            if await request.is_disconnected():
+                break
+            await asyncio.sleep(0.5)
+            new_logs = discovery_state.get_logs(since_index=last_index)
+            for log in new_logs:
+                yield f"data: {json.dumps(log)}\n\n"
+                last_index = log["index"]
+            # Stop streaming when discovery is idle/stopped and no more logs
+            if discovery_state.status in ("idle", "stopped") and not new_logs:
+                yield f"data: {json.dumps({'type': 'close', 'message': 'Stream ended'})}\n\n"
+                break
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ── Convert discovered target to monitored target ────────────
