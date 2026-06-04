@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
@@ -21,6 +21,14 @@ function evidenceImageUrl(screenshotPath: string | null): string | null {
 }
 
 export default function EvidencePage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-sm text-patrol-muted">Loading evidence…</div>}>
+      <EvidencePageContent />
+    </Suspense>
+  )
+}
+
+function EvidencePageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const targetFilter = searchParams.get('target') || ''
