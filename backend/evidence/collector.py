@@ -105,6 +105,7 @@ async def create_evidence_from_classification(
         risk_score=classification.risk_score,
         screenshot_path=screenshot_path,
         screenshot_hash=screenshot_hash,
+        capture_timestamp=datetime.now(timezone.utc),
         chain_of_custody=build_chain_entry(
             collector="evidence.collector",
             model=classification.model_used,
