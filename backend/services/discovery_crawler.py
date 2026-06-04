@@ -87,6 +87,9 @@ _FEMALE_BIO_KEYWORDS = [
     "daughter", "sister", "girly", "queen", "princess",
 ]
 
+# Instagram web app ID - used for API requests. Update if Instagram rotates this.
+IG_WEB_APP_ID = "936619743392459"
+
 
 def infer_region_from_bio(bio: str) -> tuple[str | None, float]:
     """
@@ -259,14 +262,14 @@ async def _discover_instagram_api(
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/120.0.0.0 Safari/537.36"
         ),
-        "X-IG-App-ID": "936619743392459",
+        "X-IG-App-ID": IG_WEB_APP_ID,
         "X-Requested-With": "XMLHttpRequest",
         "Accept": "application/json",
     }
 
-    # Try to load cookies from saved session
+    # Try to load cookies from saved session using the public session_path attribute
     try:
-        session_file = session_mgr._session_file if hasattr(session_mgr, "_session_file") else None
+        session_file = session_mgr.session_path
         if session_file and session_file.exists():
             data = json_mod.loads(session_file.read_text())
             if isinstance(data, dict) and "cookies" in data:
@@ -281,21 +284,16 @@ async def _discover_instagram_api(
         logger.debug("Could not load Instagram session cookies: %s", exc)
 
     if not cookies:
-        # Try alternate session file paths
+        # Try alternate session file path using absolute path from settings
         try:
-            import pathlib
-            possible_paths = [
-                pathlib.Path("storage/instagram_session.json"),
-                pathlib.Path("backend/storage/instagram_session.json"),
-            ]
-            for p in possible_paths:
-                if p.exists():
-                    data = json_mod.loads(p.read_text())
-                    if isinstance(data, dict) and "cookies" in data:
-                        for cookie in data["cookies"]:
-                            if isinstance(cookie, dict) and "name" in cookie:
-                                cookies[cookie["name"]] = cookie["value"]
-                    break
+            from configs.settings import settings
+            fallback_path = settings.EVIDENCE_STORAGE_PATH.parent / "sessions" / "instagram_state.json"
+            if fallback_path.exists():
+                data = json_mod.loads(fallback_path.read_text())
+                if isinstance(data, dict) and "cookies" in data:
+                    for cookie in data["cookies"]:
+                        if isinstance(cookie, dict) and "name" in cookie:
+                            cookies[cookie["name"]] = cookie["value"]
         except Exception:
             pass
 
@@ -849,6 +847,10 @@ async def run_discovery(
                 continue
 
             # Apply region filter if specified
+            # Note: If regions filter is specified, we only EXCLUDE profiles that are
+            # detectably from a different region. Profiles with no detected region pass
+            # through (fail-open) to avoid missing relevant profiles whose bios don't
+            # mention location explicitly.
             if regions and region:
                 region_match = any(
                     r.lower() in region.lower() for r in regions

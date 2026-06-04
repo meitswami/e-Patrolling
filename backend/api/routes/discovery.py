@@ -30,6 +30,19 @@ from services.discovery_state import discovery_state
 
 router = APIRouter()
 
+# Reference to the running discovery background task to prevent it from being
+# garbage-collected and to enable error handling via a done callback.
+_discovery_task: asyncio.Task | None = None
+
+
+def _discovery_task_done_callback(task: asyncio.Task) -> None:
+    """Reset discovery state if the task completes with an unhandled exception."""
+    if task.cancelled():
+        discovery_state.reset()
+    elif task.exception():
+        discovery_state.emit_log(f"Discovery failed: {task.exception()}", level="error")
+        discovery_state.reset()
+
 
 # ── Request models ───────────────────────────────────────────
 
@@ -178,8 +191,10 @@ async def trigger_discovery(
     if body.platforms:
         options["platforms_str"] = body.platforms
 
+    global _discovery_task
     discovery_state.mark_starting(body.max_count)
-    asyncio.create_task(_run_discovery_background(options))
+    _discovery_task = asyncio.create_task(_run_discovery_background(options))
+    _discovery_task.add_done_callback(_discovery_task_done_callback)
     return {"status": "started", "message": f"Discovery started (max: {body.max_count} profiles)"}
 
 

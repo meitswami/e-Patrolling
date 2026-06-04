@@ -161,6 +161,14 @@ export default function DiscoveryPage() {
         }
       })
       .catch(() => {})
+    // Fetch saved schedule
+    apiRequest<{ interval: string; enabled: boolean }>('/discovery/schedule')
+      .then((scheduleData) => {
+        if (scheduleData.interval) {
+          setScheduleInterval(scheduleData.interval)
+        }
+      })
+      .catch(() => {})
   }, [router, loadData])
 
   // Status polling when running or paused
@@ -331,6 +339,22 @@ export default function DiscoveryPage() {
     const params = dateFilter ? `?run_date=${dateFilter}` : ''
     const url = `${buildApiUrl(`/discovery/export.xlsx${params}`)}`
     window.open(`${url}&token=${token || ''}`, '_blank')
+  }
+
+  async function handleSaveSchedule() {
+    setError(null)
+    try {
+      await apiRequest('/discovery/schedule', {
+        method: 'PUT',
+        body: JSON.stringify({
+          interval: scheduleInterval,
+          enabled: scheduleInterval !== 'manual',
+        }),
+      })
+      setMessage(`Schedule saved: ${scheduleInterval}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save schedule')
+    }
   }
 
   const totalPages = Math.max(1, Math.ceil(total / 20))
@@ -663,17 +687,26 @@ export default function DiscoveryPage() {
                 <label className="mb-1 block text-xs font-medium text-patrol-muted">
                   Schedule
                 </label>
-                <select
-                  value={scheduleInterval}
-                  onChange={(e) => setScheduleInterval(e.target.value)}
-                  className="w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-1.5 text-sm text-patrol-text"
-                >
-                  {SCHEDULE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex gap-2">
+                  <select
+                    value={scheduleInterval}
+                    onChange={(e) => setScheduleInterval(e.target.value)}
+                    className="w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-1.5 text-sm text-patrol-text"
+                  >
+                    {SCHEDULE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleSaveSchedule}
+                    className="whitespace-nowrap rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1.5 text-xs font-medium text-patrol-accent hover:bg-patrol-accent/20 transition"
+                  >
+                    Save
+                  </button>
+                </div>
               </div>
             </div>
           </div>
