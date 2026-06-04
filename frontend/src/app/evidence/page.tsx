@@ -37,7 +37,9 @@ function EvidencePageContent() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [search, setSearch] = useState(targetFilter)
+  // When target_id is provided, don't use the target name as a text search filter
+  // (the backend search only matches comment_text/evidence_id, not target username)
+  const [search, setSearch] = useState(targetIdFilter ? '' : targetFilter)
   const [severity, setSeverity] = useState('')
   const [escalatedOnly, setEscalatedOnly] = useState(false)
   const [backfilling, setBackfilling] = useState(false)
