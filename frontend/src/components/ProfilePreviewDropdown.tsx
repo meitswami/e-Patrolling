@@ -222,29 +222,31 @@ export function ProfilePreviewDropdown({
               </div>
             </div>
 
-            {/* Stats Row */}
-            <div className={`mt-3 flex items-center gap-6 border-t pt-3 text-xs ${
-              isLight ? 'border-slate-100' : 'border-patrol-border'
-            }`}>
-              <div className="text-center">
-                <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
-                  {formatCount(preview.posts_count)}
-                </p>
-                <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-patrol-muted'}`}>Posts</p>
+            {/* Stats Row — only show if at least one stat is available */}
+            {(preview.posts_count != null || preview.followers != null || preview.following != null) && (
+              <div className={`mt-3 flex items-center gap-6 border-t pt-3 text-xs ${
+                isLight ? 'border-slate-100' : 'border-patrol-border'
+              }`}>
+                <div className="text-center">
+                  <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
+                    {formatCount(preview.posts_count)}
+                  </p>
+                  <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-patrol-muted'}`}>Posts</p>
+                </div>
+                <div className="text-center">
+                  <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
+                    {formatCount(preview.followers)}
+                  </p>
+                  <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-patrol-muted'}`}>Followers</p>
+                </div>
+                <div className="text-center">
+                  <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
+                    {formatCount(preview.following)}
+                  </p>
+                  <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-patrol-muted'}`}>Following</p>
+                </div>
               </div>
-              <div className="text-center">
-                <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
-                  {formatCount(preview.followers)}
-                </p>
-                <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-patrol-muted'}`}>Followers</p>
-              </div>
-              <div className="text-center">
-                <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
-                  {formatCount(preview.following)}
-                </p>
-                <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-patrol-muted'}`}>Following</p>
-              </div>
-            </div>
+            )}
 
             {/* Bio */}
             {preview.bio && (
