@@ -1,10 +1,11 @@
 """
-Profile Lookup Service — fetches public profile data from social media platforms.
+Profile Lookup Service — fetches profile data from social media platforms.
 
-Uses multiple strategies in order of preference:
-1. Instagram session cookies via httpx (fastest, no browser needed)
-2. Playwright browser with saved session (most reliable, same as crawler)
-3. Public meta tag scraping (fallback, limited data)
+Primary approach: Uses Playwright browser with saved Instagram session
+(the same session the crawler uses) to visit the profile page and extract
+data directly from the page/API responses.
+
+Fallback: httpx-based API calls with session cookies.
 
 This service is used by the profile preview API endpoint.
 """
@@ -17,6 +18,7 @@ from typing import Any, Optional
 import httpx
 from pydantic import BaseModel
 
+from configs.settings import settings
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -38,7 +40,7 @@ class ProfileInfo(BaseModel):
     error: Optional[str] = None
 
 
-# ── Cookie extraction from saved Playwright session ───────────
+# ── Cookie helpers ────────────────────────────────────────────
 
 def _get_instagram_cookies() -> dict[str, str]:
     """Load Instagram cookies from the saved Playwright storage state."""
@@ -66,10 +68,355 @@ def _cookies_to_header(cookies: dict[str, str]) -> str:
     return "; ".join(f"{k}={v}" for k, v in cookies.items())
 
 
-# ── Instagram profile lookup ──────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# INSTAGRAM PROFILE LOOKUP — PLAYWRIGHT-BASED (PRIMARY)
+# ══════════════════════════════════════════════════════════════
+
+async def lookup_instagram(username: str) -> ProfileInfo:
+    """
+    Fetch Instagram profile data.
+
+    Strategy order:
+    1. Playwright browser (same session as crawler) — most reliable
+    2. httpx API calls with session cookies — faster but may be blocked
+    3. Returns error with guidance if nothing works
+    """
+    profile_url = f"https://www.instagram.com/{username}/"
+
+    # Strategy 1: Playwright-based scraping (most reliable)
+    result = await _playwright_instagram_lookup(username, profile_url)
+    if result and result.found:
+        return result
+
+    # Strategy 2: httpx with session cookies
+    result = await _httpx_instagram_lookup(username, profile_url)
+    if result and result.found:
+        return result
+
+    # Nothing worked
+    from services import system_settings as app_settings
+    if not app_settings.instagram_auth_configured():
+        return ProfileInfo(
+            platform="instagram",
+            username=username,
+            profile_url=profile_url,
+            found=False,
+            error="Connect Instagram in Settings to enable profile preview.",
+        )
+
+    return ProfileInfo(
+        platform="instagram",
+        username=username,
+        profile_url=profile_url,
+        found=False,
+        error="Could not fetch profile (login wall or rate limited)",
+    )
+
+
+async def _playwright_instagram_lookup(
+    username: str, profile_url: str
+) -> Optional[ProfileInfo]:
+    """
+    Use Playwright browser (with saved session) to visit profile page
+    and intercept the API response that contains full profile data.
+    """
+    from crawlers.instagram.session_manager import InstagramSessionManager
+
+    session_mgr = InstagramSessionManager()
+    if not session_mgr.has_saved_session():
+        logger.debug("No Instagram session file for Playwright lookup")
+        return None
+
+    storage = session_mgr.load_storage_state()
+    if not storage:
+        return None
+
+    browser = None
+    playwright_instance = None
+    try:
+        from playwright.async_api import async_playwright
+
+        playwright_instance = await async_playwright().start()
+        browser = await playwright_instance.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+        context = await browser.new_context(
+            storage_state=storage,
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 900},
+            locale="en-IN",
+        )
+        await context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+        )
+
+        page = await context.new_page()
+
+        # Intercept API responses that contain profile data
+        profile_data: dict = {}
+
+        async def handle_response(response):
+            nonlocal profile_data
+            url = response.url
+            try:
+                if "web_profile_info" in url and response.status == 200:
+                    data = await response.json()
+                    user = data.get("data", {}).get("user")
+                    if user:
+                        profile_data["user"] = user
+                elif f"/{username}/" in url and "__a=1" in url and response.status == 200:
+                    data = await response.json()
+                    user = (
+                        data.get("graphql", {}).get("user")
+                        or data.get("data", {}).get("user")
+                    )
+                    if user:
+                        profile_data["user"] = user
+            except Exception:
+                pass
+
+        page.on("response", handle_response)
+
+        # Navigate to profile page
+        try:
+            await page.goto(profile_url, wait_until="domcontentloaded", timeout=20000)
+            await asyncio.sleep(2.5)  # Wait for API calls to complete
+        except Exception as exc:
+            logger.debug("Playwright navigation failed for @%s: %s", username, exc)
+            await page.close()
+            await context.close()
+            await browser.close()
+            await playwright_instance.stop()
+            return None
+
+        # Check if we hit login page
+        current_url = page.url
+        if "accounts/login" in current_url:
+            logger.debug("Instagram login wall hit for @%s", username)
+            await page.close()
+            await context.close()
+            await browser.close()
+            await playwright_instance.stop()
+            return None
+
+        # If we intercepted API data, use it (most complete)
+        if profile_data.get("user"):
+            user = profile_data["user"]
+            result = _build_ig_profile(username, profile_url, user)
+            await page.close()
+            await context.close()
+            await browser.close()
+            await playwright_instance.stop()
+            return result
+
+        # Fallback: Extract data from the page DOM directly
+        result = await _extract_profile_from_dom(page, username, profile_url)
+        await page.close()
+        await context.close()
+        await browser.close()
+        await playwright_instance.stop()
+        return result
+
+    except Exception as exc:
+        logger.warning("Playwright profile lookup failed for @%s: %s", username, exc)
+        if browser:
+            try:
+                await browser.close()
+            except Exception:
+                pass
+        if playwright_instance:
+            try:
+                await playwright_instance.stop()
+            except Exception:
+                pass
+        return None
+
+
+async def _extract_profile_from_dom(page, username: str, profile_url: str) -> Optional[ProfileInfo]:
+    """
+    Extract profile data directly from the Instagram profile page DOM.
+    This reads the header section which contains avatar, name, stats, bio.
+    """
+    try:
+        # Try to get profile data from page content via JavaScript evaluation
+        data = await page.evaluate("""() => {
+            const result = {};
+
+            // Get full name from header
+            const headerSection = document.querySelector('header section');
+            if (!headerSection) {
+                // Try alternative structure
+                const mainContent = document.querySelector('main');
+                if (!mainContent) return result;
+            }
+
+            // Full name (usually in a span inside header)
+            const nameEl = document.querySelector('header section span[class*="x1lliihq"]') ||
+                          document.querySelector('header h2 + div span') ||
+                          document.querySelector('header section > div > div > span');
+            if (nameEl) result.full_name = nameEl.textContent.trim();
+
+            // Avatar
+            const avatarImg = document.querySelector('header img[alt*="profile"]') ||
+                             document.querySelector('header img[data-testid="user-avatar"]') ||
+                             document.querySelector('header canvas + img') ||
+                             document.querySelector('header section img');
+            if (avatarImg) result.avatar_url = avatarImg.src;
+
+            // Stats (followers, following, posts)
+            const statElements = document.querySelectorAll('header section ul li') ||
+                                document.querySelectorAll('header ul li');
+            if (statElements.length >= 3) {
+                const getText = (el) => el?.textContent?.trim() || '';
+                result.posts_text = getText(statElements[0]);
+                result.followers_text = getText(statElements[1]);
+                result.following_text = getText(statElements[2]);
+            }
+
+            // Alternative: look for spans with specific number patterns
+            if (!result.followers_text) {
+                const allSpans = document.querySelectorAll('header span');
+                const statTexts = [];
+                allSpans.forEach(s => {
+                    const t = s.textContent.trim();
+                    if (t.match(/^[\\d,.]+[KMB]?\\s*(posts?|followers?|following)/i)) {
+                        statTexts.push(t);
+                    }
+                });
+                if (statTexts.length >= 3) {
+                    result.posts_text = statTexts[0];
+                    result.followers_text = statTexts[1];
+                    result.following_text = statTexts[2];
+                }
+            }
+
+            // Bio
+            const bioEl = document.querySelector('header section > div > span') ||
+                         document.querySelector('header div[class*="biography"]') ||
+                         document.querySelector('.-vDIg span');
+            if (bioEl && bioEl.textContent.length > 1 && bioEl.textContent.length < 500) {
+                result.bio = bioEl.textContent.trim();
+            }
+
+            // Verified badge (blue tick SVG)
+            const verifiedBadge = document.querySelector('header svg[aria-label="Verified"]') ||
+                                 document.querySelector('header span[title="Verified"]') ||
+                                 document.querySelector('[data-testid="verified-badge"]');
+            result.is_verified = !!verifiedBadge;
+
+            // Private
+            const privateText = document.body.textContent;
+            result.is_private = privateText.includes('This account is private') ||
+                              privateText.includes('This Account is Private');
+
+            // Page title (often has format: "Name (@username)")
+            result.page_title = document.title;
+
+            // Try meta tags as additional source
+            const ogTitle = document.querySelector('meta[property="og:title"]');
+            const ogDesc = document.querySelector('meta[property="og:description"]');
+            const ogImage = document.querySelector('meta[property="og:image"]');
+            if (ogTitle) result.og_title = ogTitle.content;
+            if (ogDesc) result.og_description = ogDesc.content;
+            if (ogImage) result.og_image = ogImage.content;
+
+            return result;
+        }""")
+
+        if not data:
+            return None
+
+        # Parse the extracted data
+        full_name = data.get("full_name")
+        avatar_url = data.get("avatar_url") or data.get("og_image")
+        bio = data.get("bio")
+        is_verified = data.get("is_verified", False)
+        is_private = data.get("is_private", False)
+
+        # Parse name from og:title if not found in DOM
+        if not full_name and data.get("og_title"):
+            name_match = re.match(r"^(.+?)\s*\(@", data["og_title"])
+            if name_match:
+                full_name = name_match.group(1).strip()
+
+        # Parse stats from text
+        followers = _parse_stat_text(data.get("followers_text", ""), "followers")
+        following = _parse_stat_text(data.get("following_text", ""), "following")
+        posts_count = _parse_stat_text(data.get("posts_text", ""), "posts")
+
+        # If we didn't get stats from DOM, try og:description
+        if followers is None and data.get("og_description"):
+            desc = data["og_description"]
+            f_match = re.search(r"([\d,.]+[KMB]?)\s*Followers", desc, re.IGNORECASE)
+            fg_match = re.search(r"([\d,.]+[KMB]?)\s*Following", desc, re.IGNORECASE)
+            p_match = re.search(r"([\d,.]+[KMB]?)\s*Posts", desc, re.IGNORECASE)
+            if f_match:
+                followers = _parse_count(f_match.group(1))
+            if fg_match:
+                following = _parse_count(fg_match.group(1))
+            if p_match:
+                posts_count = _parse_count(p_match.group(1))
+
+        # Parse bio from og:description if not found
+        if not bio and data.get("og_description"):
+            desc = data["og_description"]
+            # Bio is after the stats portion
+            bio_match = re.search(
+                r"(?:Posts?|Followers?|Following)\s*[-–—.]\s*(.+?)(?:$)",
+                desc, re.DOTALL
+            )
+            if bio_match:
+                bio = bio_match.group(1).strip()
+                bio = re.sub(r"\s*(?:See|View)\s+Instagram.*$", "", bio, flags=re.IGNORECASE).strip()
+                if len(bio) < 5:
+                    bio = None
+
+        if full_name or avatar_url or followers is not None:
+            return ProfileInfo(
+                platform="instagram",
+                username=username,
+                profile_url=profile_url,
+                full_name=full_name,
+                avatar_url=avatar_url,
+                bio=bio[:300] if bio else None,
+                followers=followers,
+                following=following,
+                posts_count=posts_count,
+                is_verified=is_verified,
+                is_private=is_private,
+                found=True,
+            )
+        return None
+
+    except Exception as exc:
+        logger.debug("DOM extraction failed for @%s: %s", username, exc)
+        return None
+
+
+def _parse_stat_text(text: str, stat_name: str) -> Optional[int]:
+    """Parse a stat text like '1,234 posts' or '10.2K followers' into an integer."""
+    if not text:
+        return None
+    # Extract the number portion
+    match = re.search(r"([\d,.]+[KMB]?)", text, re.IGNORECASE)
+    if match:
+        return _parse_count(match.group(1))
+    return None
+
+
+# ── httpx-based Instagram lookup (fallback) ───────────────────
 
 _IG_APP_ID = "936619743392459"
-
 _COMMON_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -80,89 +427,40 @@ _COMMON_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "same-origin",
-    "Sec-Ch-Ua": '"Chromium";v="125", "Not-A.Brand";v="99"',
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"Windows"',
 }
 
 
-async def lookup_instagram(username: str) -> ProfileInfo:
-    """Fetch Instagram profile info using saved session cookies."""
-    profile_url = f"https://www.instagram.com/{username}/"
+async def _httpx_instagram_lookup(username: str, profile_url: str) -> Optional[ProfileInfo]:
+    """Fallback: use httpx with session cookies to call Instagram APIs."""
     cookies = _get_instagram_cookies()
-
-    if not cookies:
-        return ProfileInfo(
-            platform="instagram",
-            username=username,
-            profile_url=profile_url,
-            found=False,
-            error="No Instagram session. Connect Instagram in Settings for profile preview.",
-        )
+    if not cookies or not cookies.get("sessionid"):
+        return None
 
     csrftoken = cookies.get("csrftoken", "")
-    sessionid = cookies.get("sessionid", "")
-    if not sessionid:
-        return ProfileInfo(
-            platform="instagram",
-            username=username,
-            profile_url=profile_url,
-            found=False,
-            error="Instagram session expired. Reconnect Instagram in Settings.",
-        )
 
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        # Strategy 1: web_profile_info endpoint
+        # Try web_profile_info
         try:
             api_url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
             headers = {
                 **_COMMON_HEADERS,
                 "X-IG-App-ID": _IG_APP_ID,
-                "X-IG-WWW-Claim": cookies.get("x-ig-www-claim", "0"),
                 "X-CSRFToken": csrftoken,
                 "X-Requested-With": "XMLHttpRequest",
                 "Referer": profile_url,
                 "Cookie": _cookies_to_header(cookies),
             }
             resp = await client.get(api_url, headers=headers)
-            logger.debug("IG web_profile_info status=%d for @%s", resp.status_code, username)
-
             if resp.status_code == 200:
                 data = resp.json()
                 user_data = data.get("data", {}).get("user")
                 if user_data:
                     return _build_ig_profile(username, profile_url, user_data)
         except Exception as exc:
-            logger.debug("web_profile_info failed for @%s: %s", username, exc)
+            logger.debug("httpx web_profile_info failed: %s", exc)
 
-        # Strategy 2: ?__a=1&__d=dis endpoint
+        # Try topsearch
         try:
-            url = f"https://www.instagram.com/{username}/?__a=1&__d=dis"
-            headers = {
-                **_COMMON_HEADERS,
-                "X-IG-App-ID": _IG_APP_ID,
-                "X-CSRFToken": csrftoken,
-                "Cookie": _cookies_to_header(cookies),
-                "Referer": "https://www.instagram.com/",
-            }
-            resp = await client.get(url, headers=headers)
-            logger.debug("IG __a=1 status=%d for @%s", resp.status_code, username)
-
-            if resp.status_code == 200:
-                data = resp.json()
-                user_data = (
-                    data.get("graphql", {}).get("user")
-                    or data.get("data", {}).get("user")
-                    or data.get("user")
-                )
-                if user_data:
-                    return _build_ig_profile(username, profile_url, user_data)
-        except Exception as exc:
-            logger.debug("__a=1 failed for @%s: %s", username, exc)
-
-        # Strategy 3: i.instagram.com mobile API endpoint
-        try:
-            # First search for the user to get their user_id
             search_url = f"https://www.instagram.com/web/search/topsearch/?context=blended&query={username}&include_reel=true"
             headers = {
                 **_COMMON_HEADERS,
@@ -172,73 +470,45 @@ async def lookup_instagram(username: str) -> ProfileInfo:
                 "Referer": "https://www.instagram.com/",
             }
             resp = await client.get(search_url, headers=headers)
-            logger.debug("IG topsearch status=%d for @%s", resp.status_code, username)
-
             if resp.status_code == 200:
                 data = resp.json()
                 users = data.get("users", [])
                 for u in users:
                     user_info = u.get("user", {})
                     if user_info.get("username", "").lower() == username.lower():
-                        # Found exact match, now try to get full info
                         user_id = user_info.get("pk") or user_info.get("pk_id")
                         if user_id:
-                            full_info = await _fetch_ig_user_by_id(client, user_id, cookies)
-                            if full_info:
-                                return _build_ig_profile(username, profile_url, full_info)
+                            # Get full info via mobile API
+                            full = await _fetch_ig_user_by_id(client, user_id, cookies)
+                            if full:
+                                return _build_ig_profile(username, profile_url, full)
 
-                        # If can't get full info, return what search gives us
+                        # Return what search gives us
                         return ProfileInfo(
                             platform="instagram",
                             username=user_info.get("username", username),
                             profile_url=profile_url,
                             full_name=user_info.get("full_name") or None,
                             avatar_url=user_info.get("profile_pic_url") or None,
-                            bio=None,
-                            followers=None,
-                            following=None,
-                            posts_count=None,
                             is_verified=user_info.get("is_verified", False),
                             is_private=user_info.get("is_private", False),
                             found=True,
                         )
         except Exception as exc:
-            logger.debug("topsearch failed for @%s: %s", username, exc)
+            logger.debug("httpx topsearch failed: %s", exc)
 
-        # Strategy 4: Scrape profile page HTML for OG/meta data
-        try:
-            headers = {
-                "User-Agent": _COMMON_HEADERS["User-Agent"],
-                "Accept": "text/html,application/xhtml+xml,*/*",
-                "Cookie": _cookies_to_header(cookies),
-            }
-            resp = await client.get(profile_url, headers=headers)
-            if resp.status_code == 200:
-                html = resp.text
-                result = _parse_ig_html(username, profile_url, html)
-                if result and result.found:
-                    return result
-        except Exception as exc:
-            logger.debug("HTML scrape failed for @%s: %s", username, exc)
-
-    return ProfileInfo(
-        platform="instagram",
-        username=username,
-        profile_url=profile_url,
-        found=False,
-        error="Could not fetch profile. Instagram session may be expired — reconnect in Settings.",
-    )
+    return None
 
 
 async def _fetch_ig_user_by_id(
     client: httpx.AsyncClient, user_id: int | str, cookies: dict[str, str]
 ) -> Optional[dict]:
-    """Fetch full user info by user_id via i.instagram.com mobile API."""
+    """Fetch full user info via i.instagram.com mobile API."""
     try:
         url = f"https://i.instagram.com/api/v1/users/{user_id}/info/"
         headers = {
             "User-Agent": "Instagram 275.0.0.27.98 Android (33/13; 440dpi; 1080x2400; samsung; SM-G991B; o1s; exynos2100; en_US; 458229258)",
-            "X-IG-App-ID": "567067343352427",  # Android app ID
+            "X-IG-App-ID": "567067343352427",
             "Cookie": _cookies_to_header(cookies),
         }
         resp = await client.get(url, headers=headers)
@@ -246,34 +516,35 @@ async def _fetch_ig_user_by_id(
             data = resp.json()
             return data.get("user")
     except Exception as exc:
-        logger.debug("i.instagram.com user info failed for id=%s: %s", user_id, exc)
+        logger.debug("i.instagram.com user info failed: %s", exc)
     return None
 
 
 def _build_ig_profile(username: str, profile_url: str, user_data: dict[str, Any]) -> ProfileInfo:
-    """Build ProfileInfo from an Instagram user data dict (handles multiple response formats)."""
+    """Build ProfileInfo from Instagram user data dict (handles multiple formats)."""
     followers = (
         user_data.get("edge_followed_by", {}).get("count")
         if isinstance(user_data.get("edge_followed_by"), dict)
-        else user_data.get("follower_count")
-        or user_data.get("followers_count")
-    )
+        else None
+    ) or user_data.get("follower_count") or user_data.get("followers_count")
+
     following = (
         user_data.get("edge_follow", {}).get("count")
         if isinstance(user_data.get("edge_follow"), dict)
-        else user_data.get("following_count")
-    )
+        else None
+    ) or user_data.get("following_count")
+
     posts_count = (
         user_data.get("edge_owner_to_timeline_media", {}).get("count")
         if isinstance(user_data.get("edge_owner_to_timeline_media"), dict)
-        else user_data.get("media_count")
-    )
+        else None
+    ) or user_data.get("media_count")
+
     avatar = (
         user_data.get("profile_pic_url_hd")
         or (user_data.get("hd_profile_pic_url_info") or {}).get("url")
         or user_data.get("profile_pic_url")
     )
-    bio = user_data.get("biography") or user_data.get("bio") or None
 
     return ProfileInfo(
         platform="instagram",
@@ -281,7 +552,7 @@ def _build_ig_profile(username: str, profile_url: str, user_data: dict[str, Any]
         profile_url=profile_url,
         full_name=user_data.get("full_name") or None,
         avatar_url=avatar,
-        bio=bio,
+        bio=user_data.get("biography") or user_data.get("bio") or None,
         followers=followers,
         following=following,
         posts_count=posts_count,
@@ -291,119 +562,11 @@ def _build_ig_profile(username: str, profile_url: str, user_data: dict[str, Any]
     )
 
 
-def _parse_ig_html(username: str, profile_url: str, html: str) -> Optional[ProfileInfo]:
-    """Parse Instagram profile page HTML for OG tags and embedded JSON."""
-    # Check if login wall
-    if "/accounts/login" in html[:5000] or "loginForm" in html[:5000]:
-        return None
-
-    # Try embedded JSON data first
-    shared_data = _extract_json_from_html(html)
-    if shared_data:
-        user_data = _dig_user_from_json(shared_data, username)
-        if user_data:
-            return _build_ig_profile(username, profile_url, user_data)
-
-    # Fall back to OG meta tags
-    og_title = _extract_meta(html, "og:title")
-    og_desc = _extract_meta(html, "og:description")
-    og_image = _extract_meta(html, "og:image")
-
-    if not og_title and not og_image and not og_desc:
-        return None
-
-    full_name = None
-    if og_title:
-        # Format: "Full Name (@username) • Instagram photos and videos"
-        name_match = re.match(r"^(.+?)\s*\(@", og_title)
-        if name_match:
-            full_name = name_match.group(1).strip()
-
-    followers = None
-    following = None
-    posts_count = None
-    bio = None
-
-    if og_desc:
-        f_match = re.search(r"([\d,.]+[KMB]?)\s*Followers", og_desc, re.IGNORECASE)
-        fg_match = re.search(r"([\d,.]+[KMB]?)\s*Following", og_desc, re.IGNORECASE)
-        p_match = re.search(r"([\d,.]+[KMB]?)\s*Posts", og_desc, re.IGNORECASE)
-        if f_match:
-            followers = _parse_count(f_match.group(1))
-        if fg_match:
-            following = _parse_count(fg_match.group(1))
-        if p_match:
-            posts_count = _parse_count(p_match.group(1))
-
-        # Bio text after stats
-        bio_parts = re.split(r"\d+[KMB]?\s*(?:Posts?|Followers?|Following)", og_desc, flags=re.IGNORECASE)
-        if len(bio_parts) > 1:
-            potential_bio = bio_parts[-1].strip().lstrip(",-–—. ")
-            # Remove trailing Instagram boilerplate
-            potential_bio = re.sub(
-                r"\s*(?:See|View)\s+Instagram.*$", "", potential_bio, flags=re.IGNORECASE
-            ).strip()
-            if potential_bio and len(potential_bio) > 5:
-                bio = potential_bio[:300]
-
-    if full_name or og_image or followers is not None:
-        return ProfileInfo(
-            platform="instagram",
-            username=username,
-            profile_url=profile_url,
-            full_name=full_name,
-            avatar_url=og_image,
-            bio=bio,
-            followers=followers,
-            following=following,
-            posts_count=posts_count,
-            is_verified=False,
-            is_private=False,
-            found=True,
-        )
-
-    return None
-
-
-def _extract_json_from_html(html: str) -> Optional[dict]:
-    """Extract embedded JSON data from Instagram HTML."""
-    # window._sharedData
-    match = re.search(r"window\._sharedData\s*=\s*(\{.+?\});\s*</script>", html, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except (json.JSONDecodeError, ValueError):
-            pass
-
-    # window.__additionalDataLoaded
-    match = re.search(
-        r"window\.__additionalDataLoaded\s*\([^,]+,\s*(\{.+?\})\s*\)\s*;", html, re.DOTALL
-    )
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except (json.JSONDecodeError, ValueError):
-            pass
-    return None
-
-
-def _dig_user_from_json(data: dict, username: str) -> Optional[dict]:
-    """Find user object within various JSON structures."""
-    try:
-        pages = data.get("entry_data", {}).get("ProfilePage", [])
-        if pages:
-            return pages[0].get("graphql", {}).get("user")
-    except (KeyError, IndexError, TypeError):
-        pass
-    if "user" in data and isinstance(data["user"], dict):
-        return data["user"]
-    return None
-
-
-# ── Twitter/X lookup ──────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# TWITTER / X
+# ══════════════════════════════════════════════════════════════
 
 async def lookup_twitter(username: str) -> ProfileInfo:
-    """Fetch X/Twitter profile via syndication endpoint."""
     profile_url = f"https://x.com/{username}"
     try:
         async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
@@ -424,11 +587,6 @@ async def lookup_twitter(username: str) -> ProfileInfo:
 
                 full_name = name_match.group(1) if name_match else None
                 avatar_url = avatar_match.group(1).replace("_normal", "_400x400") if avatar_match else None
-                bio = desc_match.group(1) if desc_match else None
-                followers = int(followers_match.group(1)) if followers_match else None
-                following = int(following_match.group(1)) if following_match else None
-                posts_count = int(tweets_match.group(1)) if tweets_match else None
-                is_verified = verified_match and verified_match.group(1) == "true"
 
                 if full_name or avatar_url:
                     return ProfileInfo(
@@ -437,140 +595,75 @@ async def lookup_twitter(username: str) -> ProfileInfo:
                         profile_url=profile_url,
                         full_name=full_name,
                         avatar_url=avatar_url,
-                        bio=bio,
-                        followers=followers,
-                        following=following,
-                        posts_count=posts_count,
-                        is_verified=bool(is_verified),
+                        bio=desc_match.group(1) if desc_match else None,
+                        followers=int(followers_match.group(1)) if followers_match else None,
+                        following=int(following_match.group(1)) if following_match else None,
+                        posts_count=int(tweets_match.group(1)) if tweets_match else None,
+                        is_verified=bool(verified_match and verified_match.group(1) == "true"),
                         found=True,
                     )
 
-        return ProfileInfo(
-            platform="twitter",
-            username=username,
-            profile_url=profile_url,
-            found=False,
-            error="Could not fetch profile",
-        )
+        return ProfileInfo(platform="twitter", username=username, profile_url=profile_url, found=False, error="Could not fetch profile")
     except Exception as exc:
-        return ProfileInfo(
-            platform="twitter",
-            username=username,
-            profile_url=profile_url,
-            found=False,
-            error=f"Fetch error: {str(exc)[:100]}",
-        )
+        return ProfileInfo(platform="twitter", username=username, profile_url=profile_url, found=False, error=f"Fetch error: {str(exc)[:100]}")
 
 
-# ── Threads lookup ────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# THREADS
+# ══════════════════════════════════════════════════════════════
 
 async def lookup_threads(username: str) -> ProfileInfo:
-    """Fetch Threads profile via public page meta tags."""
     profile_url = f"https://www.threads.net/@{username}"
     try:
         async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
-            resp = await client.get(profile_url, headers={
-                "User-Agent": _COMMON_HEADERS["User-Agent"],
-                "Accept": "text/html,*/*",
-            })
+            resp = await client.get(profile_url, headers={"User-Agent": _COMMON_HEADERS["User-Agent"], "Accept": "text/html,*/*"})
             if resp.status_code == 200:
                 html = resp.text
                 og_title = _extract_meta(html, "og:title")
                 og_desc = _extract_meta(html, "og:description")
                 og_image = _extract_meta(html, "og:image")
-
                 full_name = None
                 if og_title:
-                    name_match = re.match(r"^(.+?)\s*\(@", og_title)
-                    if name_match:
-                        full_name = name_match.group(1).strip()
-                    elif og_title and "@" not in og_title:
-                        full_name = og_title.strip()
-
+                    m = re.match(r"^(.+?)\s*\(@", og_title)
+                    full_name = m.group(1).strip() if m else (og_title if "@" not in og_title else None)
                 followers = None
                 if og_desc:
-                    f_match = re.search(r"([\d,.]+[KMB]?)\s*(?:Followers|follower)", og_desc, re.IGNORECASE)
+                    f_match = re.search(r"([\d,.]+[KMB]?)\s*(?:Followers?|follower)", og_desc, re.IGNORECASE)
                     if f_match:
                         followers = _parse_count(f_match.group(1))
-
                 if full_name or og_image or followers is not None:
-                    return ProfileInfo(
-                        platform="threads",
-                        username=username,
-                        profile_url=profile_url,
-                        full_name=full_name,
-                        avatar_url=og_image,
-                        bio=og_desc[:300] if og_desc else None,
-                        followers=followers,
-                        found=True,
-                    )
-
-        return ProfileInfo(
-            platform="threads",
-            username=username,
-            profile_url=profile_url,
-            found=False,
-            error="Could not fetch profile",
-        )
+                    return ProfileInfo(platform="threads", username=username, profile_url=profile_url, full_name=full_name, avatar_url=og_image, bio=og_desc[:300] if og_desc else None, followers=followers, found=True)
+        return ProfileInfo(platform="threads", username=username, profile_url=profile_url, found=False, error="Could not fetch profile")
     except Exception as exc:
-        return ProfileInfo(
-            platform="threads",
-            username=username,
-            profile_url=profile_url,
-            found=False,
-            error=f"Fetch error: {str(exc)[:100]}",
-        )
+        return ProfileInfo(platform="threads", username=username, profile_url=profile_url, found=False, error=f"Fetch error: {str(exc)[:100]}")
 
 
-# ── Facebook lookup ───────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# FACEBOOK
+# ══════════════════════════════════════════════════════════════
 
 async def lookup_facebook(username: str) -> ProfileInfo:
-    """Fetch Facebook profile from public page."""
     profile_url = f"https://www.facebook.com/{username}"
     try:
         async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
-            resp = await client.get(profile_url, headers={
-                "User-Agent": _COMMON_HEADERS["User-Agent"],
-                "Accept": "text/html,*/*",
-            })
+            resp = await client.get(profile_url, headers={"User-Agent": _COMMON_HEADERS["User-Agent"], "Accept": "text/html,*/*"})
             if resp.status_code == 200:
                 html = resp.text
                 og_title = _extract_meta(html, "og:title")
-                og_desc = _extract_meta(html, "og:description")
                 og_image = _extract_meta(html, "og:image")
-
+                og_desc = _extract_meta(html, "og:description")
                 if og_title or og_image:
-                    return ProfileInfo(
-                        platform="facebook",
-                        username=username,
-                        profile_url=profile_url,
-                        full_name=og_title,
-                        avatar_url=og_image,
-                        bio=og_desc[:300] if og_desc else None,
-                        found=True,
-                    )
-
-        return ProfileInfo(
-            platform="facebook",
-            username=username,
-            profile_url=profile_url,
-            found=False,
-            error="Could not fetch profile (requires login)",
-        )
+                    return ProfileInfo(platform="facebook", username=username, profile_url=profile_url, full_name=og_title, avatar_url=og_image, bio=og_desc[:300] if og_desc else None, found=True)
+        return ProfileInfo(platform="facebook", username=username, profile_url=profile_url, found=False, error="Could not fetch (requires login)")
     except Exception as exc:
-        return ProfileInfo(
-            platform="facebook",
-            username=username,
-            profile_url=profile_url,
-            found=False,
-            error=f"Fetch error: {str(exc)[:100]}",
-        )
+        return ProfileInfo(platform="facebook", username=username, profile_url=profile_url, found=False, error=f"Fetch error: {str(exc)[:100]}")
 
 
-# ── Helpers ──────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# HELPERS
+# ══════════════════════════════════════════════════════════════
 
 def _extract_meta(html: str, property_name: str) -> Optional[str]:
-    """Extract content from an OG/meta tag (handles various attribute orderings)."""
     patterns = [
         rf'<meta\s+(?:property|name)="{re.escape(property_name)}"\s+content="([^"]*)"',
         rf'<meta\s+content="([^"]*)"\s+(?:property|name)="{re.escape(property_name)}"',
@@ -585,7 +678,6 @@ def _extract_meta(html: str, property_name: str) -> Optional[str]:
 
 
 def _parse_count(text: str) -> Optional[int]:
-    """Parse human-readable count like '1.2M', '10K', '1,234'."""
     text = text.strip().replace(",", "")
     multiplier = 1
     if text.upper().endswith("K"):
@@ -615,26 +707,15 @@ PLATFORM_LOOKUPS = {
 
 async def lookup_profile(platform: str, username: str) -> ProfileInfo:
     """Main entry point: look up a profile on any supported platform."""
-    profile_url = ""
-    if platform == "instagram":
-        profile_url = f"https://www.instagram.com/{username}/"
-    elif platform == "twitter":
-        profile_url = f"https://x.com/{username}"
-    elif platform == "threads":
-        profile_url = f"https://www.threads.net/@{username}"
-    elif platform == "facebook":
-        profile_url = f"https://www.facebook.com/{username}"
-
     fetcher = PLATFORM_LOOKUPS.get(platform)
     if not fetcher:
         return ProfileInfo(
             platform=platform,
             username=username,
-            profile_url=profile_url,
+            profile_url="",
             found=False,
             error=f"Profile preview not supported for {platform}",
         )
-
     try:
         return await fetcher(username)
     except Exception as exc:
@@ -642,7 +723,7 @@ async def lookup_profile(platform: str, username: str) -> ProfileInfo:
         return ProfileInfo(
             platform=platform,
             username=username,
-            profile_url=profile_url,
+            profile_url="",
             found=False,
             error=f"Unexpected error: {str(exc)[:100]}",
         )
