@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BadgeCheck, Lock, Loader2, User, AlertCircle } from 'lucide-react'
 import { fetchProfilePreview, type ProfilePreviewData } from '@/lib/api'
+import { buildApiUrl } from '@/lib/constants'
 
 interface ProfilePreviewDropdownProps {
   /** Current input value */
@@ -174,11 +175,18 @@ export function ProfilePreviewDropdown({
                 }`}>
                   {preview.avatar_url ? (
                     <img
-                      src={preview.avatar_url}
+                      src={buildApiUrl(`/public/proxy-image?url=${encodeURIComponent(preview.avatar_url)}`)}
                       alt={preview.username}
                       className="h-full w-full object-cover"
                       referrerPolicy="no-referrer"
-                      crossOrigin="anonymous"
+                      onError={(e) => {
+                        // Fallback: try direct URL without proxy
+                        const target = e.target as HTMLImageElement
+                        if (!target.dataset.fallback) {
+                          target.dataset.fallback = '1'
+                          target.src = preview.avatar_url!
+                        }
+                      }}
                     />
                   ) : (
                     <div className={`flex h-full w-full items-center justify-center ${

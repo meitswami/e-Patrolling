@@ -169,12 +169,24 @@ async def _playwright_instagram_lookup(
             nonlocal profile_data
             url = response.url
             try:
+                # Catch web_profile_info API response
                 if "web_profile_info" in url and response.status == 200:
                     data = await response.json()
                     user = data.get("data", {}).get("user")
                     if user:
                         profile_data["user"] = user
-                elif f"/{username}/" in url and "__a=1" in url and response.status == 200:
+                        logger.debug("Intercepted web_profile_info for @%s", username)
+                # Catch graphql user query
+                elif "graphql/query" in url and response.status == 200:
+                    try:
+                        data = await response.json()
+                        user = data.get("data", {}).get("user")
+                        if user and user.get("username", "").lower() == username.lower():
+                            profile_data["user"] = user
+                    except Exception:
+                        pass
+                # Catch __a=1 endpoint
+                elif f"/{username}" in url and "__a=1" in url and response.status == 200:
                     data = await response.json()
                     user = (
                         data.get("graphql", {}).get("user")
@@ -189,15 +201,12 @@ async def _playwright_instagram_lookup(
 
         # Navigate to profile page
         try:
-            await page.goto(profile_url, wait_until="domcontentloaded", timeout=20000)
-            await asyncio.sleep(2.5)  # Wait for API calls to complete
+            await page.goto(profile_url, wait_until="networkidle", timeout=25000)
+            await asyncio.sleep(1.0)  # Extra buffer for late API responses
         except Exception as exc:
-            logger.debug("Playwright navigation failed for @%s: %s", username, exc)
-            await page.close()
-            await context.close()
-            await browser.close()
-            await playwright_instance.stop()
-            return None
+            # networkidle might timeout on heavy pages, try with what we have
+            logger.debug("Playwright navigation timeout for @%s (continuing): %s", username, exc)
+            await asyncio.sleep(1.0)
 
         # Check if we hit login page
         current_url = page.url
@@ -219,7 +228,39 @@ async def _playwright_instagram_lookup(
             await playwright_instance.stop()
             return result
 
-        # Fallback: Extract data from the page DOM directly
+        # Fallback: Make the API call directly from within the page context
+        # (this uses the page's own cookies/session which are already authenticated)
+        try:
+            api_data = await page.evaluate("""async (username) => {
+                try {
+                    const resp = await fetch(
+                        `/api/v1/users/web_profile_info/?username=${username}`,
+                        {
+                            headers: {
+                                'X-IG-App-ID': '936619743392459',
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                            credentials: 'include',
+                        }
+                    );
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        return data?.data?.user || null;
+                    }
+                } catch(e) {}
+                return null;
+            }""", username)
+            if api_data:
+                result = _build_ig_profile(username, profile_url, api_data)
+                await page.close()
+                await context.close()
+                await browser.close()
+                await playwright_instance.stop()
+                return result
+        except Exception as exc:
+            logger.debug("In-page API call failed for @%s: %s", username, exc)
+
+        # Final fallback: Extract data from the page DOM directly
         result = await _extract_profile_from_dom(page, username, profile_url)
         await page.close()
         await context.close()
