@@ -21,6 +21,20 @@ interface ProfilePreviewDropdownProps {
   inputClassName?: string
 }
 
+const PLATFORM_ICONS: Record<string, string> = {
+  instagram: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Instagram_logo_2016.svg/132px-Instagram_logo_2016.svg.png',
+  twitter: 'https://abs.twimg.com/responsive-web/client-web/icon-svg.168b89d5.svg',
+  facebook: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Facebook_Logo_%282019%29.png/120px-Facebook_Logo_%282019%29.png',
+  threads: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Threads_%28app%29.svg/120px-Threads_%28app%29.svg.png',
+}
+
+const PLATFORM_LABELS: Record<string, string> = {
+  instagram: 'Instagram',
+  twitter: 'Twitter / X',
+  facebook: 'Facebook',
+  threads: 'Threads',
+}
+
 function formatCount(n: number | null | undefined): string {
   if (n == null) return '-'
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -115,8 +129,8 @@ export function ProfilePreviewDropdown({
 
   // Dropdown card styles per variant
   const dropdownClass = isLight
-    ? 'absolute z-50 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden'
-    : 'absolute z-50 mt-1 w-full rounded-xl border border-patrol-border bg-patrol-card shadow-lg overflow-hidden'
+    ? 'absolute z-50 mt-1 w-full rounded-xl border border-sky-200 bg-white shadow-xl overflow-hidden'
+    : 'absolute z-50 mt-1 w-full rounded-xl border border-patrol-border bg-patrol-card shadow-xl overflow-hidden'
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
@@ -147,24 +161,42 @@ export function ProfilePreviewDropdown({
             onClick={() => handleSelect(preview)}
             className={`w-full p-4 text-left transition ${
               isLight
-                ? 'hover:bg-sky-50 focus:bg-sky-50'
+                ? 'hover:bg-sky-50/50 focus:bg-sky-50/50'
                 : 'hover:bg-patrol-surface focus:bg-patrol-surface'
             }`}
           >
             {/* Profile Header */}
-            <div className="flex items-start gap-3">
-              {/* Avatar */}
-              <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-full border-2 border-slate-100">
-                {preview.avatar_url ? (
-                  <img
-                    src={preview.avatar_url}
-                    alt={preview.username}
-                    className="h-full w-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className={`flex h-full w-full items-center justify-center ${isLight ? 'bg-slate-100' : 'bg-patrol-surface'}`}>
-                    <User className={`h-6 w-6 ${isLight ? 'text-slate-400' : 'text-patrol-muted'}`} />
+            <div className="flex items-center gap-3">
+              {/* Avatar with platform icon overlay */}
+              <div className="relative flex-shrink-0">
+                <div className={`h-14 w-14 overflow-hidden rounded-full border-2 ${
+                  isLight ? 'border-slate-200' : 'border-patrol-border'
+                }`}>
+                  {preview.avatar_url ? (
+                    <img
+                      src={preview.avatar_url}
+                      alt={preview.username}
+                      className="h-full w-full object-cover"
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
+                    />
+                  ) : (
+                    <div className={`flex h-full w-full items-center justify-center ${
+                      isLight ? 'bg-slate-100' : 'bg-patrol-surface'
+                    }`}>
+                      <User className={`h-6 w-6 ${isLight ? 'text-slate-400' : 'text-patrol-muted'}`} />
+                    </div>
+                  )}
+                </div>
+                {/* Platform icon badge */}
+                {PLATFORM_ICONS[preview.platform] && (
+                  <div className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full border-2 border-white bg-white shadow-sm overflow-hidden">
+                    <img
+                      src={PLATFORM_ICONS[preview.platform]}
+                      alt={preview.platform}
+                      className="h-full w-full object-contain"
+                      referrerPolicy="no-referrer"
+                    />
                   </div>
                 )}
               </div>
@@ -172,11 +204,11 @@ export function ProfilePreviewDropdown({
               {/* Name & Username */}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <span className={`truncate font-semibold ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
+                  <span className={`truncate font-semibold text-[15px] ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
                     {preview.full_name || preview.username}
                   </span>
                   {preview.is_verified && (
-                    <BadgeCheck className="h-4 w-4 flex-shrink-0 text-blue-500" />
+                    <BadgeCheck className="h-[18px] w-[18px] flex-shrink-0 fill-blue-500 text-white" />
                   )}
                   {preview.is_private && (
                     <Lock className={`h-3.5 w-3.5 flex-shrink-0 ${isLight ? 'text-slate-400' : 'text-patrol-muted'}`} />
@@ -185,38 +217,40 @@ export function ProfilePreviewDropdown({
                 <p className={`text-sm ${isLight ? 'text-slate-500' : 'text-patrol-muted'}`}>
                   @{preview.username}
                   <span className="mx-1.5">·</span>
-                  <span className="capitalize">{preview.platform}</span>
+                  <span>{PLATFORM_LABELS[preview.platform] || preview.platform}</span>
                 </p>
               </div>
             </div>
 
-            {/* Stats Row */}
-            <div className={`mt-3 flex gap-4 border-t pt-3 text-xs ${
-              isLight ? 'border-slate-100' : 'border-patrol-border'
-            }`}>
-              <div className="text-center">
-                <p className={`font-bold ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
-                  {formatCount(preview.posts_count)}
-                </p>
-                <p className={isLight ? 'text-slate-500' : 'text-patrol-muted'}>Posts</p>
+            {/* Stats Row — only show if at least one stat is available */}
+            {(preview.posts_count != null || preview.followers != null || preview.following != null) && (
+              <div className={`mt-3 flex items-center gap-6 border-t pt-3 text-xs ${
+                isLight ? 'border-slate-100' : 'border-patrol-border'
+              }`}>
+                <div className="text-center">
+                  <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
+                    {formatCount(preview.posts_count)}
+                  </p>
+                  <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-patrol-muted'}`}>Posts</p>
+                </div>
+                <div className="text-center">
+                  <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
+                    {formatCount(preview.followers)}
+                  </p>
+                  <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-patrol-muted'}`}>Followers</p>
+                </div>
+                <div className="text-center">
+                  <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
+                    {formatCount(preview.following)}
+                  </p>
+                  <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-patrol-muted'}`}>Following</p>
+                </div>
               </div>
-              <div className="text-center">
-                <p className={`font-bold ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
-                  {formatCount(preview.followers)}
-                </p>
-                <p className={isLight ? 'text-slate-500' : 'text-patrol-muted'}>Followers</p>
-              </div>
-              <div className="text-center">
-                <p className={`font-bold ${isLight ? 'text-slate-900' : 'text-patrol-text'}`}>
-                  {formatCount(preview.following)}
-                </p>
-                <p className={isLight ? 'text-slate-500' : 'text-patrol-muted'}>Following</p>
-              </div>
-            </div>
+            )}
 
             {/* Bio */}
             {preview.bio && (
-              <p className={`mt-2 line-clamp-2 text-xs leading-relaxed ${
+              <p className={`mt-2.5 line-clamp-2 text-xs leading-relaxed ${
                 isLight ? 'text-slate-600' : 'text-patrol-muted'
               }`}>
                 {preview.bio}
@@ -224,7 +258,7 @@ export function ProfilePreviewDropdown({
             )}
 
             {/* Click hint */}
-            <p className={`mt-2 text-center text-[10px] ${
+            <p className={`mt-3 text-center text-[11px] font-medium ${
               isLight ? 'text-sky-600' : 'text-patrol-accent'
             }`}>
               Click to select this profile
@@ -233,12 +267,24 @@ export function ProfilePreviewDropdown({
         </div>
       )}
 
-      {/* Error state in dropdown */}
+      {/* Error/not-found state in dropdown */}
       {showDropdown && preview && !preview.found && error && (
         <div className={dropdownClass}>
           <div className="flex items-center gap-2 p-3">
             <AlertCircle className={`h-4 w-4 flex-shrink-0 ${isLight ? 'text-amber-500' : 'text-amber-400'}`} />
             <p className={`text-xs ${isLight ? 'text-slate-600' : 'text-patrol-muted'}`}>
+              {error}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Loading state (no response yet) */}
+      {showDropdown && !preview && !loading && error && (
+        <div className={dropdownClass}>
+          <div className="flex items-center gap-2 p-3">
+            <AlertCircle className={`h-4 w-4 flex-shrink-0 ${isLight ? 'text-red-400' : 'text-red-400'}`} />
+            <p className={`text-xs ${isLight ? 'text-red-600' : 'text-red-400'}`}>
               {error}
             </p>
           </div>
