@@ -10,14 +10,18 @@ import {
   createTarget,
   getCrawlerStatus,
   listTargets,
+  purgeTarget,
+  purgeTargetData,
   runHistoricalCrawl,
   startCrawlTarget,
   updateTarget,
+  type PurgeSummary,
   type RunningCrawlInfo,
 } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { getToken } from '@/lib/auth'
 import { buildApiUrl } from '@/lib/constants'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import type { Platform, TargetAccount, TargetSource } from '@/types'
 
 const PLATFORMS = ACTIVE_PATROL_PLATFORMS
@@ -39,6 +43,13 @@ export default function TargetsPage() {
   const [platform, setPlatform] = useState<Platform>('instagram')
   const [profileUrl, setProfileUrl] = useState('')
   const [sourceFilter, setSourceFilter] = useState<TargetSource | 'all'>('admin_panel')
+
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'purge' | 'purge-data'
+    targetId: string
+    username: string
+  } | null>(null)
+  const [purging, setPurging] = useState(false)
 
   const loadTargets = useCallback(async () => {
     const source = sourceFilter === 'all' ? undefined : sourceFilter
@@ -161,6 +172,31 @@ export default function TargetsPage() {
       setError(err instanceof Error ? err.message : 'Failed to create target')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handlePurge() {
+    if (!confirmAction) return
+    setPurging(true)
+    setError(null)
+    setCrawlMessage(null)
+    try {
+      let result: PurgeSummary
+      if (confirmAction.type === 'purge') {
+        result = await purgeTarget(confirmAction.targetId)
+      } else {
+        result = await purgeTargetData(confirmAction.targetId)
+      }
+      const action = confirmAction.type === 'purge' ? 'deleted' : 'cleared'
+      setCrawlMessage(
+        `@${confirmAction.username} ${action}: ${result.evidence_deleted} evidence, ${result.comments_deleted} comments, ${result.screenshots_deleted} screenshots removed`
+      )
+      await loadTargets()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Purge failed')
+    } finally {
+      setPurging(false)
+      setConfirmAction(null)
     }
   }
 
@@ -395,11 +431,41 @@ export default function TargetsPage() {
                     )}
                   </>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction({ type: 'purge-data', targetId: item.id, username: item.username })}
+                  className="rounded-lg border border-amber-500/40 px-3 py-1 text-xs text-amber-400 hover:bg-amber-500/10"
+                  title="Clear all collected data (evidence, comments) but keep the target"
+                >
+                  Clear Data
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction({ type: 'purge', targetId: item.id, username: item.username })}
+                  className="rounded-lg border border-red-500/40 px-3 py-1 text-xs text-red-400 hover:bg-red-500/10"
+                  title="Delete target and ALL associated data permanently"
+                >
+                  Delete Target
+                </button>
               </div>
             </article>
           )
         })}
       </div>
+      <ConfirmDialog
+        isOpen={confirmAction !== null}
+        title={confirmAction?.type === 'purge' ? 'Delete Target & All Data' : 'Clear Target Data'}
+        message={
+          confirmAction?.type === 'purge'
+            ? `This will permanently delete @${confirmAction?.username} and ALL associated data including evidence, comments, screenshots, and monitoring logs. This action cannot be undone.`
+            : `This will permanently delete all evidence, comments, screenshots, and monitoring logs for @${confirmAction?.username}. The target will remain but all collected data will be lost. This action cannot be undone.`
+        }
+        confirmLabel={confirmAction?.type === 'purge' ? 'Delete Everything' : 'Clear All Data'}
+        confirmVariant="danger"
+        loading={purging}
+        onConfirm={handlePurge}
+        onCancel={() => setConfirmAction(null)}
+      />
     </AppShell>
   )
 }
