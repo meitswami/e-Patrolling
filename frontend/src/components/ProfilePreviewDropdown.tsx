@@ -180,21 +180,24 @@ export function ProfilePreviewDropdown({
                       className="h-full w-full object-cover"
                       referrerPolicy="no-referrer"
                       onError={(e) => {
-                        // Fallback: try direct URL without proxy
+                        // If proxy fails, hide the broken image and show fallback icon
                         const target = e.target as HTMLImageElement
-                        if (!target.dataset.fallback) {
-                          target.dataset.fallback = '1'
-                          target.src = preview.avatar_url!
-                        }
+                        target.style.display = 'none'
+                        // Show the sibling fallback div
+                        const fallback = target.nextElementSibling as HTMLElement
+                        if (fallback) fallback.style.display = 'flex'
                       }}
                     />
-                  ) : (
-                    <div className={`flex h-full w-full items-center justify-center ${
+                  ) : null}
+                  {/* Fallback user icon (shown when no avatar or avatar fails to load) */}
+                  <div
+                    className={`${preview.avatar_url ? 'hidden' : 'flex'} h-full w-full items-center justify-center ${
                       isLight ? 'bg-slate-100' : 'bg-patrol-surface'
-                    }`}>
-                      <User className={`h-6 w-6 ${isLight ? 'text-slate-400' : 'text-patrol-muted'}`} />
-                    </div>
-                  )}
+                    }`}
+                    style={preview.avatar_url ? { display: 'none' } : undefined}
+                  >
+                    <User className={`h-6 w-6 ${isLight ? 'text-slate-400' : 'text-patrol-muted'}`} />
+                  </div>
                 </div>
                 {/* Platform icon badge */}
                 {PLATFORM_ICONS[preview.platform] && (
