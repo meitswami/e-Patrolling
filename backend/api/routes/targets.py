@@ -1,7 +1,6 @@
 """Target accounts CRUD."""
 
 import math
-from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -207,23 +206,25 @@ async def delete_target(
     await session.delete(target)
 
 
-async def _purge_target_data(session: AsyncSession, target_id: UUID) -> dict:
-    """Delete all associated data for a target and return deletion counts."""
-    # Fetch evidence rows to delete screenshot files
+async def _purge_target_data(session: AsyncSession, target_id: UUID) -> tuple[dict, list]:
+    """Delete all associated DB data for a target and return deletion counts + file paths.
+
+    Returns a tuple of (summary_dict, screenshot_paths_to_delete). The caller
+    is responsible for deleting the files AFTER the DB transaction commits.
+    """
+    # Collect screenshot file paths before deleting evidence rows
     evidence_rows = (
         await session.execute(
             select(EvidenceReport).where(EvidenceReport.target_id == target_id)
         )
     ).scalars().all()
 
-    screenshots_deleted = 0
+    screenshot_paths = []
     for evidence in evidence_rows:
         if evidence.screenshot_path:
             root = settings.EVIDENCE_STORAGE_PATH.parent
             path = root / evidence.screenshot_path.replace("\\", "/")
-            if path.is_file():
-                path.unlink(missing_ok=True)
-                screenshots_deleted += 1
+            screenshot_paths.append(path)
 
     # Delete EvidenceReport rows
     evidence_result = await session.execute(
@@ -249,14 +250,16 @@ async def _purge_target_data(session: AsyncSession, target_id: UUID) -> dict:
     )
     monitoring_logs_deleted = logs_result.rowcount
 
-    return {
+    summary = {
         "target_id": str(target_id),
         "evidence_deleted": evidence_deleted,
         "comments_deleted": comments_deleted,
         "checkpoints_deleted": checkpoints_deleted,
-        "screenshots_deleted": screenshots_deleted,
+        "screenshots_deleted": len(screenshot_paths),
         "monitoring_logs_deleted": monitoring_logs_deleted,
     }
+
+    return summary, screenshot_paths
 
 
 @router.delete("/{target_id}/purge")
@@ -270,10 +273,18 @@ async def purge_target(
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
 
-    result = await _purge_target_data(session, target_id)
+    result, screenshot_paths = await _purge_target_data(session, target_id)
 
     # Delete the TargetAccount itself
     await session.delete(target)
+
+    # Commit DB changes before touching the filesystem
+    await session.commit()
+
+    # Delete screenshot files post-commit
+    for path in screenshot_paths:
+        if path.is_file():
+            path.unlink(missing_ok=True)
 
     return result
 
@@ -289,4 +300,14 @@ async def purge_target_data(
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
 
-    return await _purge_target_data(session, target_id)
+    result, screenshot_paths = await _purge_target_data(session, target_id)
+
+    # Commit DB changes before touching the filesystem
+    await session.commit()
+
+    # Delete screenshot files post-commit
+    for path in screenshot_paths:
+        if path.is_file():
+            path.unlink(missing_ok=True)
+
+    return result
