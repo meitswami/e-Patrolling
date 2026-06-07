@@ -154,7 +154,7 @@ app = FastAPI(
     - Regional threat intelligence
     - Repeat offender tracking
     """,
-    version="1.0.0-MVP",
+    version="1.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -211,7 +211,7 @@ async def health_check():
     payload = {
         "status": overall,
         "service": "PATROL API",
-        "version": "1.0.0-MVP",
+        "version": "1.0",
         "environment": settings.ENVIRONMENT,
         "database": db_status,
         "database_host": database_host_hint(),
@@ -236,7 +236,7 @@ async def root():
             "message": "PATROL API — Predictive Abuse Tracking & Regional Observation Layer",
             "docs": "/docs",
             "health": "/health",
-            "version": "1.0.0-MVP",
+            "version": "1.0",
         }
     )
 
