@@ -77,19 +77,24 @@ async def lookup_instagram(username: str) -> ProfileInfo:
     Fetch Instagram profile data.
 
     Strategy order:
-    1. Playwright browser (same session as crawler) — most reliable
-    2. httpx API calls with session cookies — faster but may be blocked
+    1. httpx API calls with session cookies (fast, gets full data if session works)
+    2. Playwright browser (same session as crawler) — most reliable but slower
     3. Returns error with guidance if nothing works
     """
     profile_url = f"https://www.instagram.com/{username}/"
 
-    # Strategy 1: Playwright-based scraping (most reliable)
-    result = await _playwright_instagram_lookup(username, profile_url)
-    if result and result.found:
+    # Strategy 1: httpx with session cookies (fast — try all API endpoints)
+    result = await _httpx_instagram_lookup(username, profile_url)
+    if result and result.found and result.followers is not None:
+        # Got full data (with stats) — return immediately
         return result
 
-    # Strategy 2: httpx with session cookies
-    result = await _httpx_instagram_lookup(username, profile_url)
+    # Strategy 2: Playwright-based scraping (slower but most reliable)
+    pw_result = await _playwright_instagram_lookup(username, profile_url)
+    if pw_result and pw_result.found:
+        return pw_result
+
+    # Strategy 3: If httpx got partial data (name but no stats), still return it
     if result and result.found:
         return result
 
@@ -475,12 +480,14 @@ async def _httpx_instagram_lookup(username: str, profile_url: str) -> Optional[P
     """Fallback: use httpx with session cookies to call Instagram APIs."""
     cookies = _get_instagram_cookies()
     if not cookies or not cookies.get("sessionid"):
+        logger.info("Profile preview: no Instagram session cookies available")
         return None
 
     csrftoken = cookies.get("csrftoken", "")
+    logger.info("Profile preview: attempting httpx lookup for @%s (session cookies found)", username)
 
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        # Try web_profile_info
+        # Strategy A: web_profile_info (returns full data)
         try:
             api_url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
             headers = {
@@ -492,15 +499,17 @@ async def _httpx_instagram_lookup(username: str, profile_url: str) -> Optional[P
                 "Cookie": _cookies_to_header(cookies),
             }
             resp = await client.get(api_url, headers=headers)
+            logger.info("Profile preview web_profile_info: status=%d for @%s", resp.status_code, username)
             if resp.status_code == 200:
                 data = resp.json()
                 user_data = data.get("data", {}).get("user")
                 if user_data:
+                    logger.info("Profile preview: got full data via web_profile_info for @%s", username)
                     return _build_ig_profile(username, profile_url, user_data)
         except Exception as exc:
-            logger.debug("httpx web_profile_info failed: %s", exc)
+            logger.warning("Profile preview web_profile_info failed for @%s: %s", username, exc)
 
-        # Try topsearch
+        # Strategy B: topsearch to get user_id, then i.instagram.com mobile API for full info
         try:
             search_url = f"https://www.instagram.com/web/search/topsearch/?context=blended&query={username}&include_reel=true"
             headers = {
@@ -511,6 +520,7 @@ async def _httpx_instagram_lookup(username: str, profile_url: str) -> Optional[P
                 "Referer": "https://www.instagram.com/",
             }
             resp = await client.get(search_url, headers=headers)
+            logger.info("Profile preview topsearch: status=%d for @%s", resp.status_code, username)
             if resp.status_code == 200:
                 data = resp.json()
                 users = data.get("users", [])
@@ -519,12 +529,15 @@ async def _httpx_instagram_lookup(username: str, profile_url: str) -> Optional[P
                     if user_info.get("username", "").lower() == username.lower():
                         user_id = user_info.get("pk") or user_info.get("pk_id")
                         if user_id:
-                            # Get full info via mobile API
+                            # Get FULL info via i.instagram.com mobile API
+                            logger.info("Profile preview: found user_id=%s, fetching full info via mobile API", user_id)
                             full = await _fetch_ig_user_by_id(client, user_id, cookies)
                             if full:
+                                logger.info("Profile preview: got full data via mobile API for @%s (followers=%s)", username, full.get("follower_count"))
                                 return _build_ig_profile(username, profile_url, full)
 
-                        # Return what search gives us
+                        # Return what search gives us (partial - no stats)
+                        logger.info("Profile preview: returning partial data from topsearch for @%s", username)
                         return ProfileInfo(
                             platform="instagram",
                             username=user_info.get("username", username),
@@ -536,7 +549,7 @@ async def _httpx_instagram_lookup(username: str, profile_url: str) -> Optional[P
                             found=True,
                         )
         except Exception as exc:
-            logger.debug("httpx topsearch failed: %s", exc)
+            logger.warning("Profile preview topsearch failed for @%s: %s", username, exc)
 
     return None
 
@@ -553,11 +566,20 @@ async def _fetch_ig_user_by_id(
             "Cookie": _cookies_to_header(cookies),
         }
         resp = await client.get(url, headers=headers)
+        logger.info("Profile preview i.instagram.com: status=%d for user_id=%s", resp.status_code, user_id)
         if resp.status_code == 200:
             data = resp.json()
-            return data.get("user")
+            user = data.get("user")
+            if user:
+                logger.info(
+                    "Profile preview mobile API success: @%s followers=%s media=%s",
+                    user.get("username"), user.get("follower_count"), user.get("media_count"),
+                )
+            return user
+        else:
+            logger.warning("Profile preview i.instagram.com returned %d: %s", resp.status_code, resp.text[:200])
     except Exception as exc:
-        logger.debug("i.instagram.com user info failed: %s", exc)
+        logger.warning("Profile preview i.instagram.com failed for id=%s: %s", user_id, exc)
     return None
 
 
