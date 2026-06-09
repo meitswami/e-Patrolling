@@ -105,7 +105,7 @@ export function Sidebar() {
       {/* Footer */}
       <div className="border-t border-patrol-border/40 px-5 py-3">
         <p className="text-[10px] text-patrol-muted-dim">
-          SHAKTI v1.0.0-MVP
+          SHAKTI v1.0
         </p>
         <p className="text-[10px] text-patrol-muted-dim">
           AI-Powered Women Safety Platform
