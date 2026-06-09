@@ -34,9 +34,13 @@ jobs:
             pip install -U pip -q
             pip install -r requirements.txt -q
 
-            # Playwright Chromium (Ubuntu 26.04 needs platform override)
+            # Playwright Chromium + system dependencies for headless EC2
             export PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64
-            python -m playwright install chromium 2>/dev/null || true
+            python -m playwright install --with-deps chromium 2>/dev/null || {
+              # Fallback: install deps separately (older playwright versions)
+              sudo python -m playwright install-deps chromium 2>/dev/null || true
+              python -m playwright install chromium 2>/dev/null || true
+            }
 
             # Bootstrap .env (never committed — must exist on EC2)
             if [ ! -f .env ]; then
