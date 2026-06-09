@@ -4,16 +4,26 @@ import math
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.common import PaginatedResponse
 from api.schemas.target import TargetCreate, TargetResponse, TargetUpdate
 from auth.middleware import get_current_user
 from auth.rbac import require_admin, require_analyst
+from configs.settings import settings
 from database.connection import get_session
 from crawlers.registry import is_patrol_platform
-from database.models import PlatformType, TargetAccount, TargetSource, User
+from database.models import (
+    CrawledComment,
+    EvidenceReport,
+    MonitoringLog,
+    PlatformType,
+    TargetAccount,
+    TargetCrawlCheckpoint,
+    TargetSource,
+    User,
+)
 
 router = APIRouter()
 
@@ -194,3 +204,110 @@ async def delete_target(
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
     await session.delete(target)
+
+
+async def _purge_target_data(session: AsyncSession, target_id: UUID) -> tuple[dict, list]:
+    """Delete all associated DB data for a target and return deletion counts + file paths.
+
+    Returns a tuple of (summary_dict, screenshot_paths_to_delete). The caller
+    is responsible for deleting the files AFTER the DB transaction commits.
+    """
+    # Collect screenshot file paths before deleting evidence rows
+    evidence_rows = (
+        await session.execute(
+            select(EvidenceReport).where(EvidenceReport.target_id == target_id)
+        )
+    ).scalars().all()
+
+    screenshot_paths = []
+    for evidence in evidence_rows:
+        if evidence.screenshot_path:
+            root = settings.EVIDENCE_STORAGE_PATH.parent
+            path = root / evidence.screenshot_path.replace("\\", "/")
+            screenshot_paths.append(path)
+
+    # Delete EvidenceReport rows
+    evidence_result = await session.execute(
+        delete(EvidenceReport).where(EvidenceReport.target_id == target_id)
+    )
+    evidence_deleted = evidence_result.rowcount
+
+    # Delete CrawledComment rows (CASCADE will handle AIResult deletion)
+    comments_result = await session.execute(
+        delete(CrawledComment).where(CrawledComment.target_id == target_id)
+    )
+    comments_deleted = comments_result.rowcount
+
+    # Delete TargetCrawlCheckpoint
+    checkpoints_result = await session.execute(
+        delete(TargetCrawlCheckpoint).where(TargetCrawlCheckpoint.target_id == target_id)
+    )
+    checkpoints_deleted = checkpoints_result.rowcount
+
+    # Delete MonitoringLog rows
+    logs_result = await session.execute(
+        delete(MonitoringLog).where(MonitoringLog.target_id == target_id)
+    )
+    monitoring_logs_deleted = logs_result.rowcount
+
+    summary = {
+        "target_id": str(target_id),
+        "evidence_deleted": evidence_deleted,
+        "comments_deleted": comments_deleted,
+        "checkpoints_deleted": checkpoints_deleted,
+        "screenshots_deleted": len(screenshot_paths),
+        "monitoring_logs_deleted": monitoring_logs_deleted,
+    }
+
+    return summary, screenshot_paths
+
+
+@router.delete("/{target_id}/purge")
+async def purge_target(
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_admin),
+) -> dict:
+    """Permanently delete a target and ALL associated data (admin only)."""
+    target = await session.get(TargetAccount, target_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+
+    result, screenshot_paths = await _purge_target_data(session, target_id)
+
+    # Delete the TargetAccount itself
+    await session.delete(target)
+
+    # Commit DB changes before touching the filesystem
+    await session.commit()
+
+    # Delete screenshot files post-commit
+    for path in screenshot_paths:
+        if path.is_file():
+            path.unlink(missing_ok=True)
+
+    return result
+
+
+@router.post("/{target_id}/purge-data")
+async def purge_target_data(
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_admin),
+) -> dict:
+    """Clear all collected data for a target but keep the target account (admin only)."""
+    target = await session.get(TargetAccount, target_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+
+    result, screenshot_paths = await _purge_target_data(session, target_id)
+
+    # Commit DB changes before touching the filesystem
+    await session.commit()
+
+    # Delete screenshot files post-commit
+    for path in screenshot_paths:
+        if path.is_file():
+            path.unlink(missing_ok=True)
+
+    return result

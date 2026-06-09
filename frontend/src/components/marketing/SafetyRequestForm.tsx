@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import { getIndiaLocations, submitSafetyRequest, type ProfilePreviewResult } from '@/lib/api'
+import { getIndiaLocations, submitSafetyRequest, type ProfilePreviewData } from '@/lib/api'
 import { ProfilePreviewDropdown } from '@/components/ProfilePreviewDropdown'
 
 export function SafetyRequestForm() {
@@ -105,13 +105,12 @@ export function SafetyRequestForm() {
             <ProfilePreviewDropdown
               value={value}
               onChange={(v) => updateProfile(index, v)}
-              placeholder="e.g. @username or https://instagram.com/username"
-              darkMode={false}
-              inputClassName="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-              className="flex-1"
-              onSelect={(profile: ProfilePreviewResult) => {
+              onProfileSelect={(profile) => {
                 updateProfile(index, profile.profile_url || `@${profile.username}`)
               }}
+              variant="light"
+              placeholder="e.g. @username or https://instagram.com/username"
+              className="flex-1"
             />
             {profiles.length > 1 && (
               <button

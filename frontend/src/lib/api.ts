@@ -190,6 +190,27 @@ export async function getIndiaLocations(): Promise<IndiaLocations> {
   return request<IndiaLocations>('/public/locations/india')
 }
 
+export interface ProfilePreviewData {
+  platform: string
+  username: string
+  profile_url: string
+  full_name: string | null
+  avatar_url: string | null
+  bio: string | null
+  followers: number | null
+  following: number | null
+  posts_count: number | null
+  is_verified: boolean
+  is_private: boolean
+  found: boolean
+  error: string | null
+}
+
+export async function fetchProfilePreview(query: string): Promise<ProfilePreviewData> {
+  const encoded = encodeURIComponent(query.trim())
+  return request<ProfilePreviewData>(`/public/profile-preview?q=${encoded}`)
+}
+
 export interface SubmitSafetyRequestPayload {
   profile_entries: { value: string }[]
   state: string
@@ -822,22 +843,21 @@ export async function removeDictionaryTerm(id: string): Promise<{ success: boole
   return request('/lexicon/remove-term', { method: 'DELETE', body: JSON.stringify({ id }) }, true)
 }
 
-// ── Profile Preview API ─────────────────────────────────────
+// -- Target Purge API --
 
-export interface ProfilePreviewResult {
-  username: string
-  display_name: string | null
-  avatar_url: string | null
-  bio: string | null
-  follower_count: number | null
-  is_verified: boolean
-  platform: string | null
-  profile_url: string | null
-  found: boolean
+export interface PurgeSummary {
+  target_id: string
+  evidence_deleted: number
+  comments_deleted: number
+  checkpoints_deleted: number
+  screenshots_deleted: number
+  monitoring_logs_deleted: number
 }
 
-export async function previewProfile(query: string, platform?: string): Promise<ProfilePreviewResult[]> {
-  const params = new URLSearchParams({ q: query })
-  if (platform) params.set('platform', platform)
-  return request<ProfilePreviewResult[]>(`/profile-preview?${params.toString()}`, {}, false)
+export async function purgeTarget(targetId: string): Promise<PurgeSummary> {
+  return request<PurgeSummary>(`/targets/${targetId}/purge`, { method: 'DELETE' }, true)
+}
+
+export async function purgeTargetData(targetId: string): Promise<PurgeSummary> {
+  return request<PurgeSummary>(`/targets/${targetId}/purge-data`, { method: 'POST' }, true)
 }

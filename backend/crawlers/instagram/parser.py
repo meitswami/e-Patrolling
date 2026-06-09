@@ -38,8 +38,12 @@ def parse_comments_from_html(
     for match in _COMMENT_BLOCK.finditer(html):
         text = _decode_escaped(match.group(1)).strip()
         username = match.group(2).strip()
-        if not text or username.lower() == target_username.lower():
+        if not text:
             continue
+        # Don't skip comments from the target account — they may still be
+        # abusive (e.g., target themselves posting harassment). The AI
+        # classifier decides what's abusive, not the parser.
+        # Previously: if username.lower() == target_username.lower(): continue
         key = f"{username}:{text[:80]}"
         if key in seen:
             continue

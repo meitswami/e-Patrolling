@@ -1,116 +1,153 @@
-"""Profile preview / lookup endpoint for autocomplete."""
+"""
+Profile Preview API — public endpoint for AJAX profile lookup.
 
-from fastapi import APIRouter, Depends, Query
+Returns basic public profile info (avatar, name, followers, following, posts, bio, verified)
+for a given username or profile URL.
+"""
+
+from urllib.parse import urlparse
+
+import httpx
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
-from database.connection import get_session
-from database.models import AccusedProfile, TargetAccount
-from database.models_discovery import DiscoveredTarget
+from services.profile_lookup import ProfileInfo, lookup_profile
+from utils.profile_parse import parse_profile_input
 
 router = APIRouter()
 
 
-class ProfilePreviewResult(BaseModel):
+class ProfilePreviewResponse(BaseModel):
+    platform: str
     username: str
-    display_name: str | None = None
-    avatar_url: str | None = None
-    bio: str | None = None
-    follower_count: int | None = None
+    profile_url: str
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
+    followers: Optional[int] = None
+    following: Optional[int] = None
+    posts_count: Optional[int] = None
     is_verified: bool = False
-    platform: str | None = None
-    profile_url: str | None = None
-    found: bool = True
+    is_private: bool = False
+    found: bool = False
+    error: Optional[str] = None
 
 
-@router.get("/profile-preview", response_model=list[ProfilePreviewResult])
+@router.get("/profile-preview", response_model=ProfilePreviewResponse)
 async def profile_preview(
-    q: str = Query(..., min_length=2, max_length=200),
-    platform: str | None = None,
-    session: AsyncSession = Depends(get_session),
-) -> list[ProfilePreviewResult]:
+    q: str = Query(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Username (e.g. @username) or full profile URL",
+    ),
+) -> ProfilePreviewResponse:
     """
-    Search for profile preview data by username or URL fragment.
-    Searches DiscoveredTarget, AccusedProfile, and TargetAccount tables.
-    No auth required (used by public form too).
+    Lookup a social media profile and return basic public info.
+    Used by the frontend for instant AJAX profile preview dropdown.
+
+    Requires an active Instagram session (Settings → Connect Instagram)
+    for full profile data. Without it, limited public data may be returned.
     """
-    # Normalize: remove @ prefix and extract username from URL
-    query = q.strip().lstrip("@")
-    # If it looks like a URL, try to extract username
-    if "/" in query:
-        parts = query.rstrip("/").split("/")
-        query = parts[-1] if parts[-1] else (parts[-2] if len(parts) > 1 else query)
+    text = q.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
 
-    # Escape SQL wildcard characters to prevent pattern-based enumeration
-    query = query.replace("%", "\\%").replace("_", "\\_")
+    try:
+        platform_enum, username, profile_url = parse_profile_input(text)
+        platform = platform_enum.value
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    results: list[ProfilePreviewResult] = []
-    seen_usernames: set[str] = set()
+    result = await lookup_profile(platform, username)
 
-    # Search DiscoveredTarget first (has most profile data)
-    dt_query = select(DiscoveredTarget).where(
-        DiscoveredTarget.username.ilike(f"%{query}%")
+    # Ensure profile_url is the normalized one from parse_profile_input
+    return ProfilePreviewResponse(
+        platform=result.platform,
+        username=result.username,
+        profile_url=profile_url,
+        full_name=result.full_name,
+        avatar_url=result.avatar_url,
+        bio=result.bio,
+        followers=result.followers,
+        following=result.following,
+        posts_count=result.posts_count,
+        is_verified=result.is_verified,
+        is_private=result.is_private,
+        found=result.found,
+        error=result.error,
     )
-    if platform:
-        dt_query = dt_query.where(DiscoveredTarget.platform == platform)
-    dt_query = dt_query.limit(5)
-    dt_result = await session.execute(dt_query)
-    for dt in dt_result.scalars().all():
-        if dt.username.lower() not in seen_usernames:
-            seen_usernames.add(dt.username.lower())
-            results.append(ProfilePreviewResult(
-                username=dt.username,
-                display_name=dt.display_name,
-                avatar_url=dt.avatar_url,
-                bio=(dt.bio or "")[:150] if dt.bio else None,
-                follower_count=dt.follower_count,
-                is_verified=dt.is_verified or False,
-                platform=dt.platform.value if dt.platform else None,
-                profile_url=dt.profile_url,
-                found=True,
-            ))
 
-    # Search AccusedProfile
-    if len(results) < 5:
-        ap_query = select(AccusedProfile).where(
-            AccusedProfile.username.ilike(f"%{query}%")
-        ).limit(5 - len(results))
-        ap_result = await session.execute(ap_query)
-        for ap in ap_result.scalars().all():
-            if ap.username.lower() not in seen_usernames:
-                seen_usernames.add(ap.username.lower())
-                results.append(ProfilePreviewResult(
-                    username=ap.username,
-                    display_name=ap.display_name,
-                    avatar_url=ap.avatar_url,
-                    bio=(ap.bio or "")[:150] if ap.bio else None,
-                    follower_count=ap.follower_count,
-                    is_verified=ap.is_verified or False,
-                    platform=ap.platform.value if ap.platform else None,
-                    profile_url=ap.profile_url,
-                    found=True,
-                ))
 
-    # Also search TargetAccount
-    if len(results) < 5:
-        ta_query = select(TargetAccount).where(
-            TargetAccount.username.ilike(f"%{query}%")
-        ).limit(5 - len(results))
-        ta_result = await session.execute(ta_query)
-        for ta in ta_result.scalars().all():
-            if ta.username.lower() not in seen_usernames:
-                seen_usernames.add(ta.username.lower())
-                results.append(ProfilePreviewResult(
-                    username=ta.username,
-                    display_name=ta.display_name,
-                    avatar_url=ta.avatar_url,
-                    bio=None,
-                    follower_count=ta.follower_count,
-                    is_verified=ta.is_verified or False,
-                    platform=ta.platform.value if ta.platform else None,
-                    profile_url=ta.profile_url,
-                    found=True,
-                ))
+# ── Image Proxy ────────────────────────────────────────────────
+# Instagram CDN images don't have CORS headers, so the browser blocks
+# them when loaded cross-origin. This proxy fetches the image server-side
+# and serves it from our own domain with proper headers.
 
-    return results
+_ALLOWED_IMAGE_HOSTS = {
+    "scontent.cdninstagram.com",
+    "instagram.com",
+    "cdninstagram.com",
+    "fbcdn.net",
+    "twimg.com",
+    "pbs.twimg.com",
+    "abs.twimg.com",
+    "threads.net",
+}
+
+
+def _is_allowed_image_host(url: str) -> bool:
+    """Check if the image URL is from an allowed CDN host."""
+    try:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        return any(allowed in host for allowed in _ALLOWED_IMAGE_HOSTS)
+    except Exception:
+        return False
+
+
+@router.get("/proxy-image")
+async def proxy_image(
+    url: str = Query(..., min_length=10, max_length=2000, description="Image URL to proxy"),
+):
+    """
+    Proxy an image from Instagram/Twitter CDN to avoid CORS issues.
+    Only allows images from known social media CDN hosts.
+    """
+    if not url.startswith("https://"):
+        raise HTTPException(status_code=400, detail="Only HTTPS URLs are allowed")
+
+    if not _is_allowed_image_host(url):
+        raise HTTPException(status_code=403, detail="Image host not allowed")
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/125.0.0.0 Safari/537.36"
+                ),
+                "Accept": "image/*,*/*",
+                "Referer": "https://www.instagram.com/",
+            })
+            if resp.status_code != 200:
+                raise HTTPException(status_code=502, detail="Failed to fetch image")
+
+            content_type = resp.headers.get("content-type", "image/jpeg")
+            return Response(
+                content=resp.content,
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "Access-Control-Allow-Origin": "*",
+                },
+            )
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Image fetch timed out")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail="Failed to proxy image")
