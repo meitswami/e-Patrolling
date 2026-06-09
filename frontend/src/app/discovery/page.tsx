@@ -4,9 +4,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { PlatformIcon } from '@/components/platforms/PlatformIcon'
+import { SearchableMultiSelect } from '@/components/ui/SearchableMultiSelect'
 import { isAuthenticated } from '@/lib/auth'
 import { API_BASE_URL, API_PREFIX, buildApiUrl } from '@/lib/constants'
 import { getToken } from '@/lib/auth'
+import {
+  INDIAN_CITIES,
+  CONTENT_TYPES,
+  GENDER_OPTIONS,
+  SCHEDULE_OPTIONS,
+} from '@/lib/discovery-constants'
 
 interface DiscoveredTarget {
   id: string
@@ -104,6 +111,18 @@ export default function DiscoveryPage() {
   const [showCustom, setShowCustom] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
 
+  // Discovery options state
+  const [showOptions, setShowOptions] = useState(false)
+  const [minFollowers, setMinFollowers] = useState(10000)
+  const [maxFollowers, setMaxFollowers] = useState<number | ''>('')
+  const [gender, setGender] = useState<'female' | 'male' | 'all'>('female')
+  const [requireVerified, setRequireVerified] = useState(true)
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([])
+  const [selectedContentTypes, setSelectedContentTypes] = useState<string[]>([])
+  const [customHashtags, setCustomHashtags] = useState<string[]>([])
+  const [hashtagInput, setHashtagInput] = useState('')
+  const [scheduleInterval, setScheduleInterval] = useState('daily')
+
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   const loadData = useCallback(async () => {
@@ -139,6 +158,14 @@ export default function DiscoveryPage() {
           setDiscoveryStatus(statusData.status as 'running' | 'paused' | 'stopped')
           setProgressCount(statusData.progress_count)
           setMaxCount(statusData.max_count)
+        }
+      })
+      .catch(() => {})
+    // Fetch saved schedule
+    apiRequest<{ interval: string; enabled: boolean }>('/discovery/schedule')
+      .then((scheduleData) => {
+        if (scheduleData.interval) {
+          setScheduleInterval(scheduleData.interval)
         }
       })
       .catch(() => {})
@@ -206,13 +233,45 @@ export default function DiscoveryPage() {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs])
 
+  // Hashtag input handler
+  function handleHashtagKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      addHashtag()
+    }
+  }
+
+  function addHashtag() {
+    const tag = hashtagInput.trim().replace(/^#/, '').replace(/,/g, '')
+    if (tag && !customHashtags.includes(tag)) {
+      setCustomHashtags([...customHashtags, tag])
+    }
+    setHashtagInput('')
+  }
+
+  function removeHashtag(tag: string) {
+    setCustomHashtags(customHashtags.filter((h) => h !== tag))
+  }
+
   // Action handlers
   async function handleStart() {
     setError(null)
     setMessage(null)
     setLogs([])
     try {
-      await apiRequest('/discovery/run', { method: 'POST', body: JSON.stringify({ max_count: maxCount }) })
+      await apiRequest('/discovery/run', {
+        method: 'POST',
+        body: JSON.stringify({
+          max_count: maxCount,
+          min_followers: minFollowers,
+          max_followers: maxFollowers || undefined,
+          gender,
+          require_verified: requireVerified,
+          regions: selectedRegions.length > 0 ? selectedRegions : undefined,
+          hashtags: customHashtags.length > 0 ? customHashtags : undefined,
+          content_types: selectedContentTypes.length > 0 ? selectedContentTypes : undefined,
+        }),
+      })
       setDiscoveryStatus('running')
       setProgressCount(0)
     } catch (err) {
@@ -282,14 +341,37 @@ export default function DiscoveryPage() {
     window.open(`${url}&token=${token || ''}`, '_blank')
   }
 
+  async function handleSaveSchedule() {
+    setError(null)
+    try {
+      await apiRequest('/discovery/schedule', {
+        method: 'PUT',
+        body: JSON.stringify({
+          interval: scheduleInterval,
+          enabled: scheduleInterval !== 'manual',
+        }),
+      })
+      setMessage(`Schedule saved: ${scheduleInterval}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save schedule')
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(total / 20))
   const presetCounts = [10, 25, 50, 100]
   const progressPercent = maxCount > 0 ? Math.min(100, Math.round((progressCount / maxCount) * 100)) : 0
 
+  // Dynamic subtitle
+  const subtitleGender = gender === 'all' ? 'All Genders' : gender === 'female' ? 'Female' : 'Male'
+  const subtitleVerified = requireVerified ? 'Blue Tick' : 'Any Verification'
+  const subtitleFollowers = minFollowers >= 1000 ? `${minFollowers / 1000}K` : String(minFollowers)
+  const subtitleSchedule = scheduleInterval !== 'manual' ? ` · ${scheduleInterval} Auto-Crawl` : ''
+  const dynamicSubtitle = `${subtitleGender} · ${subtitleVerified} · ${subtitleFollowers}+ Followers${subtitleSchedule}`
+
   return (
     <AppShell
       title="Auto-Discovery"
-      subtitle="Female · Blue Tick · 10K+ Followers — Daily Auto-Crawl"
+      subtitle={dynamicSubtitle}
     >
       {/* Date filter + Export */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -445,6 +527,187 @@ export default function DiscoveryPage() {
                 className="h-full rounded-full bg-cyan-500 transition-all duration-300"
                 style={{ width: `${progressPercent}%` }}
               />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Discovery Options Panel (Collapsible) */}
+      <div className="mb-4 rounded-xl border border-patrol-border bg-patrol-card overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowOptions(!showOptions)}
+          className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-patrol-text hover:bg-patrol-surface/50 transition"
+        >
+          <span>Discovery Options</span>
+          <svg
+            className={`h-4 w-4 text-patrol-muted transition-transform duration-200 ${showOptions ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {showOptions && (
+          <div className="border-t border-patrol-border px-4 pb-4 pt-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {/* Follower Range */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-patrol-muted">
+                  Follower Range
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    value={minFollowers}
+                    onChange={(e) => setMinFollowers(parseInt(e.target.value, 10) || 0)}
+                    placeholder="Min"
+                    className="w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-1.5 text-sm text-patrol-text"
+                  />
+                  <span className="text-xs text-patrol-muted">to</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={maxFollowers}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setMaxFollowers(val === '' ? '' : parseInt(val, 10) || 0)
+                    }}
+                    placeholder="Max (no limit)"
+                    className="w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-1.5 text-sm text-patrol-text"
+                  />
+                </div>
+              </div>
+
+              {/* Gender */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-patrol-muted">
+                  Gender
+                </label>
+                <select
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value as 'female' | 'male' | 'all')}
+                  className="w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-1.5 text-sm text-patrol-text"
+                >
+                  {GENDER_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Require Verified */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-patrol-muted">
+                  Verification
+                </label>
+                <label className="flex items-center gap-2 rounded-lg border border-patrol-border bg-patrol-surface px-3 py-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requireVerified}
+                    onChange={(e) => setRequireVerified(e.target.checked)}
+                    className="h-4 w-4 rounded border-patrol-border text-patrol-accent accent-cyan-500"
+                  />
+                  <span className="text-sm text-patrol-text">Require Blue Tick</span>
+                </label>
+              </div>
+
+              {/* Regions */}
+              <div>
+                <SearchableMultiSelect
+                  label="Regions"
+                  options={INDIAN_CITIES}
+                  selected={selectedRegions}
+                  onChange={setSelectedRegions}
+                  placeholder="Search cities..."
+                />
+              </div>
+
+              {/* Content Types */}
+              <div>
+                <SearchableMultiSelect
+                  label="Content Types"
+                  options={CONTENT_TYPES}
+                  selected={selectedContentTypes}
+                  onChange={setSelectedContentTypes}
+                  placeholder="Search content types..."
+                />
+              </div>
+
+              {/* Custom Hashtags */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-patrol-muted">
+                  Custom Hashtags
+                </label>
+                {customHashtags.length > 0 && (
+                  <div className="mb-1.5 flex flex-wrap gap-1">
+                    {customHashtags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1 rounded-md border border-patrol-accent/30 bg-patrol-accent/10 px-2 py-0.5 text-[11px] text-patrol-accent"
+                      >
+                        #{tag}
+                        <button
+                          type="button"
+                          onClick={() => removeHashtag(tag)}
+                          className="ml-0.5 text-patrol-accent/70 hover:text-patrol-accent"
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={hashtagInput}
+                    onChange={(e) => setHashtagInput(e.target.value)}
+                    onKeyDown={handleHashtagKeyDown}
+                    placeholder="Type hashtag, press Enter"
+                    className="w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-1.5 text-sm text-patrol-text placeholder:text-patrol-muted/60"
+                  />
+                  <button
+                    type="button"
+                    onClick={addHashtag}
+                    className="rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1.5 text-xs font-medium text-patrol-accent hover:bg-patrol-accent/20 transition"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Schedule */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-patrol-muted">
+                  Schedule
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={scheduleInterval}
+                    onChange={(e) => setScheduleInterval(e.target.value)}
+                    className="w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-1.5 text-sm text-patrol-text"
+                  >
+                    {SCHEDULE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleSaveSchedule}
+                    className="whitespace-nowrap rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1.5 text-xs font-medium text-patrol-accent hover:bg-patrol-accent/20 transition"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

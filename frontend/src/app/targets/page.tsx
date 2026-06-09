@@ -17,11 +17,13 @@ import {
   updateTarget,
   type PurgeSummary,
   type RunningCrawlInfo,
+  type ProfilePreviewData,
 } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { getToken } from '@/lib/auth'
 import { buildApiUrl } from '@/lib/constants'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { ProfilePreviewDropdown } from '@/components/ProfilePreviewDropdown'
 import type { Platform, TargetAccount, TargetSource } from '@/types'
 
 const PLATFORMS = ACTIVE_PATROL_PLATFORMS
@@ -293,13 +295,25 @@ export default function TargetsPage() {
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
-              <span className="text-patrol-muted">Username</span>
-              <input
-                required
+              <span className="text-patrol-muted">Username or Profile URL</span>
+              <ProfilePreviewDropdown
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
-                placeholder="handle_without_at"
+                onChange={(v) => setUsername(v)}
+                onProfileSelect={(profile: ProfilePreviewData) => {
+                  setUsername(profile.username)
+                  setProfileUrl(profile.profile_url)
+                  if (profile.full_name) {
+                    setDisplayName(profile.full_name)
+                  }
+                  // Auto-detect platform from the preview response
+                  const detectedPlatform = profile.platform as Platform
+                  if (PLATFORMS.includes(detectedPlatform)) {
+                    setPlatform(detectedPlatform)
+                  }
+                }}
+                variant="dark"
+                placeholder="handle_without_at or profile URL"
+                className="mt-1"
               />
             </label>
             <label className="block text-sm">
@@ -308,6 +322,7 @@ export default function TargetsPage() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
+                placeholder="Auto-filled on profile select"
               />
             </label>
             <label className="block text-sm">

@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Update the Discovery frontend page to add all configurable discovery options as an expandable settings panel. Add searchable multi-select dropdowns for regions and content types, input fields for follower thresholds, gender dropdown, verification toggle, custom hashtags input, and scheduling controls.",
+  "status": "in_progress",
+  "steps": [
+    "Step 1: Create a reusable SearchableMultiSelect component at frontend/src/components/ui/SearchableMultiSelect.tsx. This should be a custom component (no external dependencies since react-select is not in package.json) that supports: searchable text input, multi-select with chips/tags, dropdown with filtered options, remove individual selections. Style with Tailwind using the patrol-* theme tokens (patrol-border, patrol-surface, patrol-text, patrol-accent, patrol-muted, patrol-card).",
+    "Step 2: Add a constants file frontend/src/lib/discovery-constants.ts with: INDIAN_CITIES array (50+ major Indian cities for the region filter), CONTENT_TYPES array (Influencer, Actor, Journalist, Star, Model, Blogger, Politician, Activist, Sportsperson, Anchor, Singer, Dancer, Entrepreneur, Fashion Designer, Chef, Author, Comedian), GENDER_OPTIONS (Female, Male, All), DEFAULT_HASHTAGS list.",
+    "Step 3: Update frontend/src/app/discovery/page.tsx to add a collapsible 'Discovery Options' panel between the existing controls section and the logs panel. The panel should include: (a) Min/Max followers inputs side by side, (b) Gender dropdown, (c) Require Verified toggle/checkbox, (d) Region SearchableMultiSelect with Indian cities, (e) Content Types SearchableMultiSelect, (f) Custom Hashtags - a text input where user can type hashtags (comma or space separated) shown as removable chips, (g) Schedule section with interval dropdown (Manual, Daily, Weekly, Every 6 hours, Custom) and optional time picker.",
+    "Step 4: Wire up the discovery options to the API call. When user clicks 'Start Discovery', include all configured options in the POST /discovery/run request body. Update the DiscoveryRunRequest interface to match the new backend schema. Also update the AppShell subtitle from hardcoded 'Female - Blue Tick - 10K+ Followers - Daily Auto-Crawl' to dynamically reflect current settings.",
+    "Step 5: Add a schedule save button that calls PUT /discovery/schedule to persist the schedule config. Show current schedule status in the controls section (e.g. 'Scheduled: Daily at 2:00 AM' or 'Manual only')."
+  ],
+  "acceptance_criteria": [
+    "Discovery page renders a collapsible options panel with all configurable fields",
+    "SearchableMultiSelect component works for both regions and content types",
+    "Custom hashtags can be added/removed as chips",
+    "All options are passed in the POST /discovery/run API call body",
+    "Frontend builds successfully with npm run build (no TypeScript errors)",
+    "The page subtitle updates dynamically based on selected options"
+  ],
+  "verification": [
+    "cd /projects/sandbox/e-Patrolling/frontend && npm run build"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

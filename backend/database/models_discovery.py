@@ -12,7 +12,7 @@ from sqlalchemy import (
     ForeignKey, Integer, String, Text, func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
 from database.models import Base, PlatformType, _PLATFORM_PG
 
@@ -60,3 +60,15 @@ class DiscoveryRun(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     triggered_by: Mapped[str] = mapped_column(String(50), default="scheduler")
+
+
+class DiscoverySchedule(Base):
+    __tablename__ = "discovery_schedules"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    interval: Mapped[str] = mapped_column(String(50), default="daily")
+    custom_cron: Mapped[Optional[str]] = mapped_column(String(100))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    options: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
