@@ -7,6 +7,7 @@ import {
   Crosshair,
   Radio,
   ShieldAlert,
+  ClipboardCheck,
   Map,
   UserX,
   BarChart3,
@@ -24,6 +25,7 @@ const ICONS: Record<string, LucideIcon> = {
   Crosshair,
   Radio,
   ShieldAlert,
+  ClipboardCheck,
   Map,
   UserX,
   BarChart3,
@@ -37,7 +39,7 @@ const ICONS: Record<string, LucideIcon> = {
 // Group nav items by section
 const SECTIONS = [
   { label: 'Command', items: ['Overview', 'Targets', 'Discovery', 'Website Intake'] },
-  { label: 'Intelligence', items: ['Live Monitoring', 'Evidence Feed', 'Region Intel', 'Offenders'] },
+  { label: 'Intelligence', items: ['Live Monitoring', 'Evidence Feed', 'Manual Verification', 'Region Intel', 'Offenders'] },
   { label: 'Analysis', items: ['Analytics', 'Reports', 'Abuse Dictionary', 'Settings'] },
 ]
 

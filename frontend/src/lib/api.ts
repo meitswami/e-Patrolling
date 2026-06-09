@@ -821,3 +821,47 @@ export async function addDictionaryTerm(body: AddTermPayload): Promise<{ success
 export async function removeDictionaryTerm(id: string): Promise<{ success: boolean; message: string }> {
   return request('/lexicon/remove-term', { method: 'DELETE', body: JSON.stringify({ id }) }, true)
 }
+
+// ── Manual Verification API ───────────────────────────
+
+export async function listUnverifiedEvidence(
+  page = 1,
+  pageSize = 20,
+  filters?: {
+    search?: string
+    severity?: string
+    platform?: string
+  },
+): Promise<PaginatedResponse<EvidenceListItem>> {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  if (filters?.search) params.set('search', filters.search)
+  if (filters?.severity) params.set('severity', filters.severity)
+  if (filters?.platform) params.set('platform', filters.platform)
+  return request<PaginatedResponse<EvidenceListItem>>(
+    `/verification/unverified?${params.toString()}`,
+    {},
+    true,
+  )
+}
+
+export interface VerifyEvidencePayload {
+  is_abusive: boolean
+  add_to_dictionary: boolean
+  label?: string
+  meaning_en?: string
+  offender_implication?: string
+}
+
+export async function verifyEvidence(
+  evidenceId: string,
+  body: VerifyEvidencePayload,
+): Promise<{ id: string; evidence_id: string; verification_status: string; verified_at: string; added_to_dictionary: boolean; term_id: string | null }> {
+  return request(
+    `/verification/${evidenceId}/verify`,
+    { method: 'POST', body: JSON.stringify(body) },
+    true,
+  )
+}
