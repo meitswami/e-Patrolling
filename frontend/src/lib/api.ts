@@ -842,3 +842,22 @@ export async function addDictionaryTerm(body: AddTermPayload): Promise<{ success
 export async function removeDictionaryTerm(id: string): Promise<{ success: boolean; message: string }> {
   return request('/lexicon/remove-term', { method: 'DELETE', body: JSON.stringify({ id }) }, true)
 }
+
+// -- Target Purge API --
+
+export interface PurgeSummary {
+  target_id: string
+  evidence_deleted: number
+  comments_deleted: number
+  checkpoints_deleted: number
+  screenshots_deleted: number
+  monitoring_logs_deleted: number
+}
+
+export async function purgeTarget(targetId: string): Promise<PurgeSummary> {
+  return request<PurgeSummary>(`/targets/${targetId}/purge`, { method: 'DELETE' }, true)
+}
+
+export async function purgeTargetData(targetId: string): Promise<PurgeSummary> {
+  return request<PurgeSummary>(`/targets/${targetId}/purge-data`, { method: 'POST' }, true)
+}
