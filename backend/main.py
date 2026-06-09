@@ -293,6 +293,7 @@ def register_routers() -> None:
     app.include_router(lexicon_router, prefix=f"{PREFIX}/lexicon", tags=["Abuse Dictionary"])
     app.include_router(discovery_router, prefix=f"{PREFIX}/discovery", tags=["Auto-Discovery"])
     app.include_router(target_import_router, prefix=f"{PREFIX}/targets/import", tags=["Target Import"])
+    app.include_router(profile_preview_router, prefix=f"{PREFIX}", tags=["Profile Preview"])
     app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
     logger.info("Registered API routers under %s", PREFIX)
 

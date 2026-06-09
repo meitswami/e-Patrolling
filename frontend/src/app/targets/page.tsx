@@ -25,6 +25,7 @@ import { buildApiUrl } from '@/lib/constants'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ProfilePreviewDropdown } from '@/components/ProfilePreviewDropdown'
 import type { Platform, TargetAccount, TargetSource } from '@/types'
+import { ProfilePreviewDropdown } from '@/components/ProfilePreviewDropdown'
 
 const PLATFORMS = ACTIVE_PATROL_PLATFORMS
 
@@ -423,7 +424,7 @@ export default function TargetsPage() {
                 >
                   {active ? 'Pause' : 'Resume'}
                 </button>
-                {active && (
+                {active && !running && (
                   <>
                     <button
                       type="button"
@@ -431,7 +432,7 @@ export default function TargetsPage() {
                       onClick={() => handleCrawl(item.id, item.username, false)}
                       className="rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1 text-xs font-medium text-patrol-accent disabled:opacity-50"
                     >
-                      {running ? 'Crawling…' : 'Run crawl'}
+                      Run crawl
                     </button>
                     {item.platform === 'instagram' && (
                       <button
@@ -441,7 +442,7 @@ export default function TargetsPage() {
                         className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400 disabled:opacity-50"
                         title="Scroll older posts and crawl all comments on each"
                       >
-                        {running ? 'Crawling…' : 'Crawl history'}
+                        Crawl history
                       </button>
                     )}
                   </>

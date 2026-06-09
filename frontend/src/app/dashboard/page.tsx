@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Activity, AlertTriangle, Shield, Users } from 'lucide-react'
+import { Activity, AlertTriangle, ArrowUpRight, Shield, Users } from 'lucide-react'
 import { StatGridSkeleton } from '@/components/ui/Skeleton'
 import { ClientOnly } from '@/components/ClientOnly'
 import { AppShell } from '@/components/layout/AppShell'
@@ -78,10 +79,10 @@ export default function DashboardPage() {
 
   const statCards = stats
     ? [
-        { label: 'Active targets', value: stats.active_targets, icon: Users },
-        { label: 'Evidence (24h)', value: stats.evidence_24h, icon: Shield },
-        { label: 'Critical alerts', value: stats.critical_total, icon: AlertTriangle },
-        { label: 'Repeat offenders', value: stats.repeat_offenders, icon: Activity },
+        { label: 'Active targets', value: stats.active_targets, icon: Users, href: '/targets' },
+        { label: 'Evidence (24h)', value: stats.evidence_24h, icon: Shield, href: '/evidence' },
+        { label: 'Critical alerts', value: stats.critical_total, icon: AlertTriangle, href: '/evidence?severity=CRITICAL' },
+        { label: 'Repeat offenders', value: stats.repeat_offenders, icon: Activity, href: '/offenders' },
       ]
     : []
 
@@ -113,9 +114,10 @@ export default function DashboardPage() {
         {statCards.map((stat) => {
           const Icon = stat.icon
           return (
-            <div
+            <Link
               key={stat.label}
-              className="group relative overflow-hidden rounded-xl border border-patrol-border bg-gradient-card p-5 shadow-card transition-all duration-200 hover:border-patrol-accent/30 hover:shadow-card-hover"
+              href={stat.href}
+              className="group relative overflow-hidden rounded-xl border border-patrol-border bg-gradient-card p-5 shadow-card transition-all duration-200 hover:border-patrol-accent/30 hover:shadow-card-hover cursor-pointer"
             >
               <div className="absolute inset-0 bg-gradient-subtle opacity-0 transition-opacity group-hover:opacity-100" />
               <div className="relative flex items-start justify-between">
@@ -127,7 +129,10 @@ export default function DashboardPage() {
                   <Icon className="h-5 w-5 text-patrol-accent" />
                 </div>
               </div>
-            </div>
+              <div className="absolute bottom-3 right-3 opacity-0 transition-opacity group-hover:opacity-100">
+                <ArrowUpRight className="h-4 w-4 text-patrol-accent" />
+              </div>
+            </Link>
           )
         })}
       </div>

@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { PlatformLabel } from '@/components/platforms/PlatformLabel'
 import { PlatformMonitorGrid } from '@/components/platforms/PlatformMonitorGrid'
 import { LiveCrawlFeed } from '@/components/crawl/LiveCrawlFeed'
@@ -44,7 +44,17 @@ function formatCrawlTimestamp(startedAt: string, completedAt: string | null): st
 }
 
 export default function MonitoringPage() {
+  return (
+    <Suspense fallback={<AppShell title="Live Monitoring" subtitle="Loading..."><p className="text-sm text-patrol-muted">Loading...</p></AppShell>}>
+      <MonitoringPageContent />
+    </Suspense>
+  )
+}
+
+function MonitoringPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const targetFilter = searchParams.get('target')
   const [status, setStatus] = useState<CrawlerStatus | null>(null)
   const [logs, setLogs] = useState<CrawlLogItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -108,12 +118,43 @@ export default function MonitoringPage() {
   const isBusy =
     running || status?.scheduler_is_running || (status?.running_targets?.length ?? 0) > 0
 
+  const runningTargets = targetFilter
+    ? (status?.running_targets ?? []).filter((r) => r.target_id === targetFilter)
+    : (status?.running_targets ?? [])
+
+  const filteredLogs = targetFilter
+    ? logs.filter((l) => l.target_id === targetFilter)
+    : logs
+
+  const targetUsername = targetFilter
+    ? (runningTargets.find((r) => r.target_id === targetFilter)?.target_username ||
+       logs.find((l) => l.target_id === targetFilter)?.target_username ||
+       null)
+    : null
+
   return (
     <AppShell title="Live Monitoring" subtitle="Crawler status and recent runs">
       {error && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
           {error}
         </p>
+      )}
+
+      {targetFilter && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-patrol-accent animate-pulse" />
+            <span className="text-sm font-medium text-patrol-accent">
+              Monitoring: @{targetUsername || targetFilter}
+            </span>
+          </div>
+          <Link
+            href="/monitoring"
+            className="rounded-lg border border-patrol-border px-3 py-1.5 text-xs text-patrol-muted hover:text-patrol-text hover:border-patrol-accent/40 transition"
+          >
+            Show All
+          </Link>
+        </div>
       )}
 
       <ClientOnly fallback={<p className="text-sm text-patrol-muted">Loading patrol status…</p>}>
@@ -146,11 +187,11 @@ export default function MonitoringPage() {
           </div>
         )}
 
-        {status?.running_targets && status.running_targets.length > 0 && (
+        {status?.running_targets && status.running_targets.length > 0 && runningTargets.length > 0 && (
           <div className="mb-4 rounded-xl border border-patrol-accent/40 bg-patrol-accent/10 p-4">
             <h2 className="font-mono text-sm text-patrol-accent">Crawlers running now</h2>
             <ul className="mt-2 space-y-1 text-sm text-patrol-text">
-              {status.running_targets.map((r) => (
+              {runningTargets.map((r) => (
                 <li key={r.target_id}>
                   <PlatformLabel platform={r.platform} size="sm" className="mr-2 inline" />
                   @{r.target_username}
@@ -204,7 +245,7 @@ export default function MonitoringPage() {
 
       {/* Live Crawl Activity Feed — real-time crawler actions */}
       <div className="mb-6">
-        <LiveCrawlFeed />
+        <LiveCrawlFeed targetUsername={targetUsername} />
       </div>
 
       {status?.recent_errors && status.recent_errors.length > 0 && (
@@ -252,10 +293,10 @@ export default function MonitoringPage() {
         <p className="text-xs text-patrol-muted">
           Click a run to see abusive comments, screenshots, and offender names.
         </p>
-        {logs.length === 0 && !loading && (
+        {filteredLogs.length === 0 && !loading && (
           <p className="text-sm text-patrol-muted">No crawl runs yet.</p>
         )}
-        {logs.map((log) => (
+        {filteredLogs.map((log) => (
           <Link
             key={log.id}
             href={`/monitoring/log/${log.id}`}
