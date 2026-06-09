@@ -30,7 +30,7 @@ const ACTIVITY_ICONS: Record<string, { icon: typeof Activity; color: string }> =
 
 const MAX_ENTRIES = 50
 
-export function LiveCrawlFeed() {
+export function LiveCrawlFeed({ targetUsername }: { targetUsername?: string | null }) {
   const [activities, setActivities] = useState<CrawlActivity[]>([])
   const [connected, setConnected] = useState(false)
   const feedRef = useRef<HTMLDivElement>(null)
@@ -45,6 +45,7 @@ export function LiveCrawlFeed() {
         return
       }
       if (msg.type === 'crawl_activity') {
+        if (targetUsername && msg.data.target_username !== targetUsername) return
         const entry: CrawlActivity = {
           id: `${msg.data.timestamp}-${msg.data.activity_type}-${Math.random().toString(36).slice(2, 8)}`,
           ...msg.data,
@@ -52,6 +53,7 @@ export function LiveCrawlFeed() {
         setActivities((prev) => [...prev, entry].slice(-MAX_ENTRIES))
       }
       if (msg.type === 'crawl_completed') {
+        if (targetUsername && msg.data.target_username !== targetUsername) return
         const entry: CrawlActivity = {
           id: `completed-${Date.now()}`,
           target_username: msg.data.target_username,
@@ -66,7 +68,7 @@ export function LiveCrawlFeed() {
     })
 
     return disconnect
-  }, [])
+  }, [targetUsername])
 
   // Auto-scroll to bottom when new entries arrive
   useEffect(() => {
