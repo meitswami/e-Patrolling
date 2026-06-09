@@ -190,6 +190,27 @@ export async function getIndiaLocations(): Promise<IndiaLocations> {
   return request<IndiaLocations>('/public/locations/india')
 }
 
+export interface ProfilePreviewData {
+  platform: string
+  username: string
+  profile_url: string
+  full_name: string | null
+  avatar_url: string | null
+  bio: string | null
+  followers: number | null
+  following: number | null
+  posts_count: number | null
+  is_verified: boolean
+  is_private: boolean
+  found: boolean
+  error: string | null
+}
+
+export async function fetchProfilePreview(query: string): Promise<ProfilePreviewData> {
+  const encoded = encodeURIComponent(query.trim())
+  return request<ProfilePreviewData>(`/public/profile-preview?q=${encoded}`)
+}
+
 export interface SubmitSafetyRequestPayload {
   profile_entries: { value: string }[]
   state: string

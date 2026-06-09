@@ -30,7 +30,7 @@ const ACTIVITY_ICONS: Record<string, { icon: typeof Activity; color: string }> =
 
 const MAX_ENTRIES = 50
 
-export function LiveCrawlFeed() {
+export function LiveCrawlFeed({ targetUsername }: { targetUsername?: string | null }) {
   const [activities, setActivities] = useState<CrawlActivity[]>([])
   const [connected, setConnected] = useState(false)
   const feedRef = useRef<HTMLDivElement>(null)
@@ -81,6 +81,10 @@ export function LiveCrawlFeed() {
     autoScrollRef.current = scrollHeight - scrollTop - clientHeight < 40
   }
 
+  const displayActivities = targetUsername
+    ? activities.filter((a) => a.target_username === targetUsername)
+    : activities
+
   return (
     <div className="rounded-xl border border-patrol-border bg-patrol-card overflow-hidden">
       {/* Header */}
@@ -108,7 +112,7 @@ export function LiveCrawlFeed() {
         onScroll={handleScroll}
         className="h-64 overflow-y-auto bg-patrol-bg/30 px-3 py-2 font-mono text-xs"
       >
-        {activities.length === 0 ? (
+        {displayActivities.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-patrol-muted">
               {connected
@@ -118,7 +122,7 @@ export function LiveCrawlFeed() {
           </div>
         ) : (
           <ul className="space-y-1">
-            {activities.map((entry) => {
+            {displayActivities.map((entry) => {
               const config = ACTIVITY_ICONS[entry.activity_type] || {
                 icon: Activity,
                 color: 'text-patrol-muted',

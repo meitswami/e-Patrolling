@@ -318,13 +318,19 @@ async def crawl_log_results(
     )
     if log.target_id and log.started_at:
         evidence_q = evidence_q.where(EvidenceReport.target_id == log.target_id)
+        # Add a small buffer (5 seconds) to account for clock differences between
+        # Python-set started_at/completed_at and DB server_default capture_timestamp
+        from datetime import timedelta
+        buffer = timedelta(seconds=5)
+        start_bound = log.started_at - buffer
         if log.completed_at:
+            end_bound = log.completed_at + buffer
             evidence_q = evidence_q.where(
-                EvidenceReport.capture_timestamp >= log.started_at,
-                EvidenceReport.capture_timestamp <= log.completed_at,
+                EvidenceReport.capture_timestamp >= start_bound,
+                EvidenceReport.capture_timestamp <= end_bound,
             )
         else:
-            evidence_q = evidence_q.where(EvidenceReport.capture_timestamp >= log.started_at)
+            evidence_q = evidence_q.where(EvidenceReport.capture_timestamp >= start_bound)
     elif log.target_id:
         evidence_q = evidence_q.where(EvidenceReport.target_id == log.target_id)
 

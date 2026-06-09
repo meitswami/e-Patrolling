@@ -15,21 +15,46 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.schemas.discovery import (
+    DiscoveryRunOptions,
+    DiscoveryScheduleRequest,
+    DiscoveryScheduleResponse,
+)
 from auth.middleware import get_current_user
 from auth.rbac import require_admin, require_analyst
 from database.connection import get_session
 from database.models import User
-from database.models_discovery import DiscoveredTarget, DiscoveryRun
+from database.models_discovery import DiscoveredTarget, DiscoveryRun, DiscoverySchedule
 from services.discovery_crawler import convert_discovered_to_target, run_discovery
 from services.discovery_state import discovery_state
 
 router = APIRouter()
+
+# Reference to the running discovery background task to prevent it from being
+# garbage-collected and to enable error handling via a done callback.
+_discovery_task: asyncio.Task | None = None
+
+
+def _discovery_task_done_callback(task: asyncio.Task) -> None:
+    """Reset discovery state if the task completes with an unhandled exception."""
+    if task.cancelled():
+        discovery_state.reset()
+    elif task.exception():
+        discovery_state.emit_log(f"Discovery failed: {task.exception()}", level="error")
+        discovery_state.reset()
 
 
 # ── Request models ───────────────────────────────────────────
 
 class DiscoveryRunRequest(BaseModel):
     max_count: int = Field(default=25, ge=1, le=500)
+    min_followers: int = Field(default=10000, ge=0)
+    max_followers: Optional[int] = Field(default=None, ge=0)
+    gender: str = "female"
+    require_verified: bool = True
+    regions: Optional[list[str]] = None
+    hashtags: Optional[list[str]] = None
+    content_types: Optional[list[str]] = None
     platforms: Optional[list[str]] = None
 
 
@@ -131,7 +156,7 @@ async def list_discovery_runs(
 
 # ── Trigger discovery manually ───────────────────────────────
 
-async def _run_discovery_background(max_count: int) -> None:
+async def _run_discovery_background(options: dict) -> None:
     """Run discovery in a background task with its own database session."""
     from database.connection import async_session_factory
 
@@ -141,7 +166,7 @@ async def _run_discovery_background(max_count: int) -> None:
         return
 
     async with async_session_factory() as session:
-        await run_discovery(session, triggered_by="manual", max_count=max_count)
+        await run_discovery(session, triggered_by="manual", **options)
 
 
 @router.post("/run")
@@ -152,9 +177,91 @@ async def trigger_discovery(
     """Manually trigger a discovery run (returns immediately)."""
     if discovery_state.status in ("running", "paused"):
         raise HTTPException(status_code=409, detail="Discovery is already running")
+
+    options = {
+        "max_count": body.max_count,
+        "min_followers": body.min_followers,
+        "max_followers": body.max_followers,
+        "gender": body.gender,
+        "require_verified": body.require_verified,
+        "regions": body.regions,
+        "hashtags": body.hashtags,
+        "content_types": body.content_types,
+    }
+    if body.platforms:
+        options["platforms_str"] = body.platforms
+
+    global _discovery_task
     discovery_state.mark_starting(body.max_count)
-    asyncio.create_task(_run_discovery_background(body.max_count))
+    _discovery_task = asyncio.create_task(_run_discovery_background(options))
+    _discovery_task.add_done_callback(_discovery_task_done_callback)
     return {"status": "started", "message": f"Discovery started (max: {body.max_count} profiles)"}
+
+
+# ── Discovery options defaults ───────────────────────────────
+
+@router.get("/options/defaults")
+async def get_discovery_defaults(
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Return the default discovery options."""
+    defaults = DiscoveryRunOptions()
+    return defaults.model_dump()
+
+
+# ── Discovery schedule endpoints ─────────────────────────────
+
+@router.get("/schedule")
+async def get_discovery_schedule(
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Get current discovery schedule configuration."""
+    result = await session.execute(
+        select(DiscoverySchedule).order_by(DiscoverySchedule.created_at.desc()).limit(1)
+    )
+    schedule = result.scalar_one_or_none()
+    if not schedule:
+        return DiscoveryScheduleResponse().model_dump()
+    return {
+        "interval": schedule.interval,
+        "custom_cron": schedule.custom_cron,
+        "enabled": schedule.enabled,
+        "next_run_at": None,
+    }
+
+
+@router.put("/schedule")
+async def update_discovery_schedule(
+    body: DiscoveryScheduleRequest,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_admin),
+) -> dict:
+    """Update discovery schedule configuration."""
+    result = await session.execute(
+        select(DiscoverySchedule).order_by(DiscoverySchedule.created_at.desc()).limit(1)
+    )
+    schedule = result.scalar_one_or_none()
+    if schedule:
+        schedule.interval = body.interval
+        schedule.custom_cron = body.custom_cron
+        schedule.enabled = body.enabled
+        schedule.updated_at = datetime.now(timezone.utc)
+    else:
+        schedule = DiscoverySchedule(
+            interval=body.interval,
+            custom_cron=body.custom_cron,
+            enabled=body.enabled,
+        )
+        session.add(schedule)
+
+    await session.commit()
+    return {
+        "interval": schedule.interval,
+        "custom_cron": schedule.custom_cron,
+        "enabled": schedule.enabled,
+        "next_run_at": None,
+    }
 
 
 # ── Discovery control endpoints ──────────────────────────────

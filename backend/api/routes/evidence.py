@@ -90,12 +90,20 @@ async def list_evidence(
             or_(
                 EvidenceReport.comment_text.ilike(pattern),
                 EvidenceReport.evidence_id.ilike(pattern),
+                TargetAlias.username.ilike(pattern),
+                AccusedAlias.username.ilike(pattern),
             )
         )
         count_q = count_q.where(
             or_(
                 EvidenceReport.comment_text.ilike(pattern),
                 EvidenceReport.evidence_id.ilike(pattern),
+                EvidenceReport.target_id.in_(
+                    select(TargetAccount.id).where(TargetAccount.username.ilike(pattern))
+                ),
+                EvidenceReport.accused_id.in_(
+                    select(AccusedProfile.id).where(AccusedProfile.username.ilike(pattern))
+                ),
             )
         )
 

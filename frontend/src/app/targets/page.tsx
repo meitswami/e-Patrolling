@@ -10,15 +10,22 @@ import {
   createTarget,
   getCrawlerStatus,
   listTargets,
+  purgeTarget,
+  purgeTargetData,
   runHistoricalCrawl,
   startCrawlTarget,
   updateTarget,
+  type PurgeSummary,
   type RunningCrawlInfo,
+  type ProfilePreviewData,
 } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { getToken } from '@/lib/auth'
 import { buildApiUrl } from '@/lib/constants'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { ProfilePreviewDropdown } from '@/components/ProfilePreviewDropdown'
 import type { Platform, TargetAccount, TargetSource } from '@/types'
+import { ProfilePreviewDropdown } from '@/components/ProfilePreviewDropdown'
 
 const PLATFORMS = ACTIVE_PATROL_PLATFORMS
 
@@ -39,6 +46,13 @@ export default function TargetsPage() {
   const [platform, setPlatform] = useState<Platform>('instagram')
   const [profileUrl, setProfileUrl] = useState('')
   const [sourceFilter, setSourceFilter] = useState<TargetSource | 'all'>('admin_panel')
+
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'purge' | 'purge-data'
+    targetId: string
+    username: string
+  } | null>(null)
+  const [purging, setPurging] = useState(false)
 
   const loadTargets = useCallback(async () => {
     const source = sourceFilter === 'all' ? undefined : sourceFilter
@@ -164,6 +178,31 @@ export default function TargetsPage() {
     }
   }
 
+  async function handlePurge() {
+    if (!confirmAction) return
+    setPurging(true)
+    setError(null)
+    setCrawlMessage(null)
+    try {
+      let result: PurgeSummary
+      if (confirmAction.type === 'purge') {
+        result = await purgeTarget(confirmAction.targetId)
+      } else {
+        result = await purgeTargetData(confirmAction.targetId)
+      }
+      const action = confirmAction.type === 'purge' ? 'deleted' : 'cleared'
+      setCrawlMessage(
+        `@${confirmAction.username} ${action}: ${result.evidence_deleted} evidence, ${result.comments_deleted} comments, ${result.screenshots_deleted} screenshots removed`
+      )
+      await loadTargets()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Purge failed')
+    } finally {
+      setPurging(false)
+      setConfirmAction(null)
+    }
+  }
+
   const monitoringCount = items.filter((i) => i.is_active && i.monitoring_enabled).length
 
   return (
@@ -257,13 +296,25 @@ export default function TargetsPage() {
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
-              <span className="text-patrol-muted">Username</span>
-              <input
-                required
+              <span className="text-patrol-muted">Username or Profile URL</span>
+              <ProfilePreviewDropdown
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
-                placeholder="handle_without_at"
+                onChange={(v) => setUsername(v)}
+                onProfileSelect={(profile: ProfilePreviewData) => {
+                  setUsername(profile.username)
+                  setProfileUrl(profile.profile_url)
+                  if (profile.full_name) {
+                    setDisplayName(profile.full_name)
+                  }
+                  // Auto-detect platform from the preview response
+                  const detectedPlatform = profile.platform as Platform
+                  if (PLATFORMS.includes(detectedPlatform)) {
+                    setPlatform(detectedPlatform)
+                  }
+                }}
+                variant="dark"
+                placeholder="handle_without_at or profile URL"
+                className="mt-1"
               />
             </label>
             <label className="block text-sm">
@@ -272,6 +323,7 @@ export default function TargetsPage() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
+                placeholder="Auto-filled on profile select"
               />
             </label>
             <label className="block text-sm">
@@ -372,7 +424,7 @@ export default function TargetsPage() {
                 >
                   {active ? 'Pause' : 'Resume'}
                 </button>
-                {active && (
+                {active && !running && (
                   <>
                     <button
                       type="button"
@@ -380,7 +432,7 @@ export default function TargetsPage() {
                       onClick={() => handleCrawl(item.id, item.username, false)}
                       className="rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1 text-xs font-medium text-patrol-accent disabled:opacity-50"
                     >
-                      {running ? 'Crawling…' : 'Run crawl'}
+                      Run crawl
                     </button>
                     {item.platform === 'instagram' && (
                       <button
@@ -390,16 +442,46 @@ export default function TargetsPage() {
                         className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400 disabled:opacity-50"
                         title="Scroll older posts and crawl all comments on each"
                       >
-                        {running ? 'Crawling…' : 'Crawl history'}
+                        Crawl history
                       </button>
                     )}
                   </>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction({ type: 'purge-data', targetId: item.id, username: item.username })}
+                  className="rounded-lg border border-amber-500/40 px-3 py-1 text-xs text-amber-400 hover:bg-amber-500/10"
+                  title="Clear all collected data (evidence, comments) but keep the target"
+                >
+                  Clear Data
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction({ type: 'purge', targetId: item.id, username: item.username })}
+                  className="rounded-lg border border-red-500/40 px-3 py-1 text-xs text-red-400 hover:bg-red-500/10"
+                  title="Delete target and ALL associated data permanently"
+                >
+                  Delete Target
+                </button>
               </div>
             </article>
           )
         })}
       </div>
+      <ConfirmDialog
+        isOpen={confirmAction !== null}
+        title={confirmAction?.type === 'purge' ? 'Delete Target & All Data' : 'Clear Target Data'}
+        message={
+          confirmAction?.type === 'purge'
+            ? `This will permanently delete @${confirmAction?.username} and ALL associated data including evidence, comments, screenshots, and monitoring logs. This action cannot be undone.`
+            : `This will permanently delete all evidence, comments, screenshots, and monitoring logs for @${confirmAction?.username}. The target will remain but all collected data will be lost. This action cannot be undone.`
+        }
+        confirmLabel={confirmAction?.type === 'purge' ? 'Delete Everything' : 'Clear All Data'}
+        confirmVariant="danger"
+        loading={purging}
+        onConfirm={handlePurge}
+        onCancel={() => setConfirmAction(null)}
+      />
     </AppShell>
   )
 }

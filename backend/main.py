@@ -154,7 +154,7 @@ app = FastAPI(
     - Regional threat intelligence
     - Repeat offender tracking
     """,
-    version="1.0.0-MVP",
+    version="1.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -211,7 +211,7 @@ async def health_check():
     payload = {
         "status": overall,
         "service": "PATROL API",
-        "version": "1.0.0-MVP",
+        "version": "1.0",
         "environment": settings.ENVIRONMENT,
         "database": db_status,
         "database_host": database_host_hint(),
@@ -236,7 +236,7 @@ async def root():
             "message": "PATROL API — Predictive Abuse Tracking & Regional Observation Layer",
             "docs": "/docs",
             "health": "/health",
-            "version": "1.0.0-MVP",
+            "version": "1.0",
         }
     )
 
@@ -266,9 +266,14 @@ def register_routers() -> None:
     from api.routes.lexicon import router as lexicon_router
     from api.routes.discovery import router as discovery_router
     from api.routes.target_import import router as target_import_router
-    from api.routes.verification import router as verification_router
+    from api.routes.profile_preview import router as profile_preview_router
 
     app.include_router(public_router, prefix=f"{PREFIX}/public", tags=["Public Website"])
+    app.include_router(
+        profile_preview_router,
+        prefix=f"{PREFIX}/public",
+        tags=["Public Website"],
+    )
     app.include_router(
         website_requests_router,
         prefix=f"{PREFIX}/website-requests",
