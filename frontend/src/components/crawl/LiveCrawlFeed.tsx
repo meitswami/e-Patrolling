@@ -45,7 +45,6 @@ export function LiveCrawlFeed({ targetUsername }: { targetUsername?: string | nu
         return
       }
       if (msg.type === 'crawl_activity') {
-        if (targetUsername && msg.data.target_username !== targetUsername) return
         const entry: CrawlActivity = {
           id: `${msg.data.timestamp}-${msg.data.activity_type}-${Math.random().toString(36).slice(2, 8)}`,
           ...msg.data,
@@ -53,7 +52,6 @@ export function LiveCrawlFeed({ targetUsername }: { targetUsername?: string | nu
         setActivities((prev) => [...prev, entry].slice(-MAX_ENTRIES))
       }
       if (msg.type === 'crawl_completed') {
-        if (targetUsername && msg.data.target_username !== targetUsername) return
         const entry: CrawlActivity = {
           id: `completed-${Date.now()}`,
           target_username: msg.data.target_username,
@@ -68,7 +66,7 @@ export function LiveCrawlFeed({ targetUsername }: { targetUsername?: string | nu
     })
 
     return disconnect
-  }, [targetUsername])
+  }, [])
 
   // Auto-scroll to bottom when new entries arrive
   useEffect(() => {
@@ -82,6 +80,10 @@ export function LiveCrawlFeed({ targetUsername }: { targetUsername?: string | nu
     const { scrollTop, scrollHeight, clientHeight } = feedRef.current
     autoScrollRef.current = scrollHeight - scrollTop - clientHeight < 40
   }
+
+  const displayActivities = targetUsername
+    ? activities.filter((a) => a.target_username === targetUsername)
+    : activities
 
   return (
     <div className="rounded-xl border border-patrol-border bg-patrol-card overflow-hidden">
@@ -110,7 +112,7 @@ export function LiveCrawlFeed({ targetUsername }: { targetUsername?: string | nu
         onScroll={handleScroll}
         className="h-64 overflow-y-auto bg-patrol-bg/30 px-3 py-2 font-mono text-xs"
       >
-        {activities.length === 0 ? (
+        {displayActivities.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-patrol-muted">
               {connected
@@ -120,7 +122,7 @@ export function LiveCrawlFeed({ targetUsername }: { targetUsername?: string | nu
           </div>
         ) : (
           <ul className="space-y-1">
-            {activities.map((entry) => {
+            {displayActivities.map((entry) => {
               const config = ACTIVITY_ICONS[entry.activity_type] || {
                 icon: Activity,
                 color: 'text-patrol-muted',

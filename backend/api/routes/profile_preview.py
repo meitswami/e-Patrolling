@@ -42,6 +42,9 @@ async def profile_preview(
         parts = query.rstrip("/").split("/")
         query = parts[-1] if parts[-1] else (parts[-2] if len(parts) > 1 else query)
 
+    # Escape SQL wildcard characters to prevent pattern-based enumeration
+    query = query.replace("%", "\\%").replace("_", "\\_")
+
     results: list[ProfilePreviewResult] = []
     seen_usernames: set[str] = set()
 

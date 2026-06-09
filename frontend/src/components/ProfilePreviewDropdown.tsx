@@ -13,6 +13,7 @@ interface Props {
   className?: string
   inputClassName?: string
   darkMode?: boolean
+  required?: boolean
 }
 
 export function ProfilePreviewDropdown({
@@ -24,6 +25,7 @@ export function ProfilePreviewDropdown({
   className = '',
   inputClassName = '',
   darkMode = true,
+  required,
 }: Props) {
   const [results, setResults] = useState<ProfilePreviewResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -95,6 +97,7 @@ export function ProfilePreviewDropdown({
           onFocus={() => results.length > 0 && setShowDropdown(true)}
           placeholder={placeholder}
           className={inputClassName || baseInputClass}
+          required={required}
         />
         {loading && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">

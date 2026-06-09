@@ -266,6 +266,7 @@ export default function TargetsPage() {
                 platform={platform}
                 placeholder="handle_without_at or profile URL"
                 darkMode={true}
+                required
                 inputClassName="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
                 onSelect={(profile: ProfilePreviewResult) => {
                   setUsername(profile.username)
