@@ -130,7 +130,7 @@ async def _weekly_evidence_export_job() -> None:
 
 
 async def _daily_discovery_job() -> None:
-    """Run daily auto-discovery of female verified 10K+ accounts."""
+    """Run auto-discovery based on user-configured schedule settings."""
     from database.connection import async_session_factory
     from services.discovery_crawler import run_discovery
 
@@ -138,13 +138,32 @@ async def _daily_discovery_job() -> None:
         return
     try:
         async with async_session_factory() as session:
-            run = await run_discovery(session, triggered_by="scheduler")
+            # Check if schedule is enabled via DiscoverySchedule
+            from sqlalchemy import select
+            from database.models_discovery import DiscoverySchedule
+
+            result = await session.execute(
+                select(DiscoverySchedule).order_by(DiscoverySchedule.created_at.desc()).limit(1)
+            )
+            schedule = result.scalar_one_or_none()
+
+            # If schedule exists and is disabled, skip
+            if schedule and not schedule.enabled:
+                logger.info("Discovery schedule is disabled, skipping")
+                return
+
+            # If schedule exists and has options, use them
+            options = {}
+            if schedule and schedule.options:
+                options = schedule.options
+
+            run = await run_discovery(session, triggered_by="scheduler", **options)
             logger.info(
-                "Daily discovery complete: %d profiles found (run %s)",
+                "Scheduled discovery complete: %d profiles found (run %s)",
                 run.total_found, run.id,
             )
     except Exception as exc:
-        logger.exception("Daily discovery failed: %s", exc)
+        logger.exception("Scheduled discovery failed: %s", exc)
 
 
 def start_scheduler() -> None:
