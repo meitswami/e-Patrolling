@@ -26,6 +26,7 @@ class EvidenceListItem(BaseModel):
     is_abusive: bool = True
     is_lexicon_match: bool = False
     abuse_explanations: List[Dict[str, Any]] = []
+    verification_status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
