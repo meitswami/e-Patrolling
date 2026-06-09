@@ -264,6 +264,11 @@ CREATE TABLE evidence_reports (
     is_escalated        BOOLEAN NOT NULL DEFAULT FALSE,
     escalated_at        TIMESTAMP WITH TIME ZONE,
     
+    -- Verification
+    verification_status VARCHAR(20),
+    verified_at         TIMESTAMPTZ,
+    verified_by         UUID REFERENCES users(id),
+    
     created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
@@ -273,6 +278,7 @@ CREATE INDEX idx_evidence_severity ON evidence_reports(severity_level);
 CREATE INDEX idx_evidence_platform ON evidence_reports(platform);
 CREATE INDEX idx_evidence_created ON evidence_reports(created_at DESC);
 CREATE INDEX idx_evidence_escalated ON evidence_reports(is_escalated);
+CREATE INDEX idx_evidence_verification_status ON evidence_reports(verification_status);
 
 
 -- ============================================================

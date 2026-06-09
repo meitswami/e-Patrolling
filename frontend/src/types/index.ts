@@ -76,6 +76,7 @@ export interface EvidenceListItem {
   is_abusive: boolean
   is_lexicon_match: boolean
   abuse_explanations: AbuseExplanationItem[]
+  verification_status?: 'pending' | 'verified_abusive' | 'false_positive' | null
 }
 
 export interface AbuseExplanationItem {

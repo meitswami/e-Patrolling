@@ -843,21 +843,38 @@ export async function removeDictionaryTerm(id: string): Promise<{ success: boole
   return request('/lexicon/remove-term', { method: 'DELETE', body: JSON.stringify({ id }) }, true)
 }
 
-// -- Target Purge API --
+// ── Manual Verification API ───────────────────────────
 
-export interface PurgeSummary {
-  target_id: string
-  evidence_deleted: number
-  comments_deleted: number
-  checkpoints_deleted: number
-  screenshots_deleted: number
-  monitoring_logs_deleted: number
+export async function listUnverifiedEvidence(
+  page = 1,
+  pageSize = 20,
+): Promise<PaginatedResponse<EvidenceListItem>> {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  return request<PaginatedResponse<EvidenceListItem>>(
+    `/verification/unverified?${params.toString()}`,
+    {},
+    true,
+  )
 }
 
-export async function purgeTarget(targetId: string): Promise<PurgeSummary> {
-  return request<PurgeSummary>(`/targets/${targetId}/purge`, { method: 'DELETE' }, true)
+export interface VerifyEvidencePayload {
+  is_abusive: boolean
+  add_to_dictionary: boolean
+  label?: string
+  meaning_en?: string
+  offender_implication?: string
 }
 
-export async function purgeTargetData(targetId: string): Promise<PurgeSummary> {
-  return request<PurgeSummary>(`/targets/${targetId}/purge-data`, { method: 'POST' }, true)
+export async function verifyEvidence(
+  evidenceId: string,
+  body: VerifyEvidencePayload,
+): Promise<{ id: string; evidence_id: string; verification_status: string; verified_at: string; added_to_dictionary: boolean; term_id: string | null }> {
+  return request(
+    `/verification/${evidenceId}/verify`,
+    { method: 'POST', body: JSON.stringify(body) },
+    true,
+  )
 }
