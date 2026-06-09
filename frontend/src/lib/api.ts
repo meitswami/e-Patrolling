@@ -827,19 +827,11 @@ export async function removeDictionaryTerm(id: string): Promise<{ success: boole
 export async function listUnverifiedEvidence(
   page = 1,
   pageSize = 20,
-  filters?: {
-    search?: string
-    severity?: string
-    platform?: string
-  },
 ): Promise<PaginatedResponse<EvidenceListItem>> {
   const params = new URLSearchParams({
     page: String(page),
     page_size: String(pageSize),
   })
-  if (filters?.search) params.set('search', filters.search)
-  if (filters?.severity) params.set('severity', filters.severity)
-  if (filters?.platform) params.set('platform', filters.platform)
   return request<PaginatedResponse<EvidenceListItem>>(
     `/verification/unverified?${params.toString()}`,
     {},

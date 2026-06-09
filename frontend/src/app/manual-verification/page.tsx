@@ -42,6 +42,7 @@ function ManualVerificationContent() {
   const [modalLabel, setModalLabel] = useState('')
   const [modalMeaning, setModalMeaning] = useState('')
   const [modalImplication, setModalImplication] = useState('')
+  const [modalAddToDict, setModalAddToDict] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
   const load = useCallback(async () => {
@@ -71,6 +72,7 @@ function ManualVerificationContent() {
     setModalLabel('')
     setModalMeaning('')
     setModalImplication('')
+    setModalAddToDict(true)
   }
 
   const openFalsePositiveModal = (item: EvidenceListItem) => {
@@ -82,6 +84,7 @@ function ManualVerificationContent() {
     setModalLabel('')
     setModalMeaning('')
     setModalImplication('')
+    setModalAddToDict(true)
   }
 
   const handleConfirmAbusive = async () => {
@@ -90,14 +93,14 @@ function ManualVerificationContent() {
     try {
       await verifyEvidence(confirmModal.item.id, {
         is_abusive: true,
-        add_to_dictionary: true,
+        add_to_dictionary: modalAddToDict,
         label: modalLabel || undefined,
         meaning_en: modalMeaning || undefined,
         offender_implication: modalImplication || undefined,
       })
       setItems((prev) => prev.filter((i) => i.id !== confirmModal.item.id))
       setTotal((prev) => prev - 1)
-      setSuccessMsg('Evidence confirmed as abusive and added to dictionary.')
+      setSuccessMsg(modalAddToDict ? 'Evidence confirmed as abusive and added to dictionary.' : 'Evidence confirmed as abusive.')
       closeModal()
       setTimeout(() => setSuccessMsg(null), 4000)
     } catch (err) {
@@ -242,13 +245,22 @@ function ManualVerificationContent() {
       {confirmModal?.type === 'abusive' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="mx-4 w-full max-w-lg rounded-xl border border-patrol-border bg-patrol-surface p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-patrol-text">Add to Abuse Dictionary</h3>
+            <h3 className="text-lg font-semibold text-patrol-text">Confirm Abusive</h3>
             <div className="mt-3 rounded-lg border border-patrol-border bg-patrol-bg p-3">
               <p className="text-sm text-patrol-muted italic">
                 &ldquo;{confirmModal.item.comment_text}&rdquo;
               </p>
             </div>
             <div className="mt-4 space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={modalAddToDict}
+                  onChange={(e) => setModalAddToDict(e.target.checked)}
+                  className="h-4 w-4 rounded border-patrol-border bg-patrol-bg text-green-600 focus:ring-green-500"
+                />
+                <span className="text-sm text-patrol-text">Add to Abuse Dictionary</span>
+              </label>
               <div>
                 <label className="block text-xs font-medium text-patrol-muted mb-1">Category Label</label>
                 <select
