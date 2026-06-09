@@ -821,3 +821,23 @@ export async function addDictionaryTerm(body: AddTermPayload): Promise<{ success
 export async function removeDictionaryTerm(id: string): Promise<{ success: boolean; message: string }> {
   return request('/lexicon/remove-term', { method: 'DELETE', body: JSON.stringify({ id }) }, true)
 }
+
+// ── Profile Preview API ─────────────────────────────────────
+
+export interface ProfilePreviewResult {
+  username: string
+  display_name: string | null
+  avatar_url: string | null
+  bio: string | null
+  follower_count: number | null
+  is_verified: boolean
+  platform: string | null
+  profile_url: string | null
+  found: boolean
+}
+
+export async function previewProfile(query: string, platform?: string): Promise<ProfilePreviewResult[]> {
+  const params = new URLSearchParams({ q: query })
+  if (platform) params.set('platform', platform)
+  return request<ProfilePreviewResult[]>(`/profile-preview?${params.toString()}`, {}, false)
+}

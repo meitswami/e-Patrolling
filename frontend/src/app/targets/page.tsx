@@ -14,11 +14,13 @@ import {
   startCrawlTarget,
   updateTarget,
   type RunningCrawlInfo,
+  type ProfilePreviewResult,
 } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { getToken } from '@/lib/auth'
 import { buildApiUrl } from '@/lib/constants'
 import type { Platform, TargetAccount, TargetSource } from '@/types'
+import { ProfilePreviewDropdown } from '@/components/ProfilePreviewDropdown'
 
 const PLATFORMS = ACTIVE_PATROL_PLATFORMS
 
@@ -257,13 +259,19 @@ export default function TargetsPage() {
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
-              <span className="text-patrol-muted">Username</span>
-              <input
-                required
+              <span className="text-patrol-muted">Username or Profile URL</span>
+              <ProfilePreviewDropdown
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
-                placeholder="handle_without_at"
+                onChange={setUsername}
+                platform={platform}
+                placeholder="handle_without_at or profile URL"
+                darkMode={true}
+                inputClassName="mt-1 w-full rounded-lg border border-patrol-border bg-patrol-surface px-3 py-2 text-patrol-text"
+                onSelect={(profile: ProfilePreviewResult) => {
+                  setUsername(profile.username)
+                  if (profile.display_name) setDisplayName(profile.display_name)
+                  if (profile.profile_url) setProfileUrl(profile.profile_url)
+                }}
               />
             </label>
             <label className="block text-sm">
