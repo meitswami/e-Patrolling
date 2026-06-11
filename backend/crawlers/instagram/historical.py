@@ -93,8 +93,17 @@ async def _expand_comment_thread(page, max_rounds: int) -> int:
     return clicks
 
 
-async def collect_post_urls(page, username: str, max_posts: int, scroll_rounds: int) -> List[str]:
+async def collect_post_urls(
+    page,
+    username: str,
+    max_posts: int,
+    scroll_rounds: int,
+    *,
+    crawl_target_id: str | None = None,
+) -> List[str]:
     """Scroll profile grid and collect unique post/reel URLs."""
+    from services.crawl_pause import check_crawl_pause
+
     profile_url = f"https://www.instagram.com/{username}/"
     await page.goto(profile_url, wait_until="domcontentloaded")
     await asyncio.sleep(2.0)
@@ -102,6 +111,7 @@ async def collect_post_urls(page, username: str, max_posts: int, scroll_rounds: 
     scroll_delay = settings.HISTORICAL_CRAWL_PROFILE_SCROLL_DELAY_SEC
     found: Set[str] = set()
     for _ in range(scroll_rounds):
+        await check_crawl_pause(crawl_target_id)
         hrefs: List[str] = await page.eval_on_selector_all(
             'a[href*="/p/"], a[href*="/reel/"]',
             "els => els.map(e => e.getAttribute('href')).filter(Boolean)",
@@ -240,8 +250,11 @@ async def crawl_post_comments(
     known_comment_ids: Optional[set[str]] = None,
     known_hashes: Optional[set[str]] = None,
     incremental: bool = True,
+    crawl_target_id: str | None = None,
 ) -> PostCrawlOutcome:
     """Open post, expand comments; collect new comments not in known set."""
+    from services.crawl_pause import check_crawl_pause
+
     post_id = extract_post_id(post_url)
     known_ids = known_comment_ids or set()
     known_hashes_set = known_hashes or set()
@@ -261,6 +274,7 @@ async def crawl_post_comments(
         prev_new_count = 0
         stall_rounds = 0
         for round_idx in range(expand_rounds):
+            await check_crawl_pause(crawl_target_id)
             if round_idx == 0:
                 expand_clicks += await _expand_comment_thread(page, 3)
             else:

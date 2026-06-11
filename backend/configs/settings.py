@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     DEBUG: bool = False
 
+    # ── Portable Windows build ────────────────────────────────
+    PATROL_PORTABLE: bool = False
+    PORTABLE_PORT: int = 8765
+    STATIC_UI_PATH: Optional[Path] = None
+
     # ── Database (Supabase PostgreSQL) ───────────────────────
     # Dashboard → Project Settings → Database → Connection string (URI)
     # Use Session pooler (port 6543) for serverless; Direct (5432) for long-lived API.

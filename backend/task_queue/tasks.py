@@ -70,6 +70,46 @@ async def _safe_execute_crawl_all() -> None:
         logger.error("Inline crawl-all task failed: %s", exc, exc_info=True)
 
 
+async def _safe_execute_view_crawl(target_id: UUID, *, historical: bool = False) -> None:
+    """Background view crawl with visible browser."""
+    from database import connection as db
+    from crawlers.pipeline import run_crawl_for_target
+    from crawlers.crawl_state import unregister_running
+
+    try:
+        if db.async_session_factory is None:
+            await db.init_db()
+        async with db.async_session_factory() as session:
+            await asyncio.wait_for(
+                run_crawl_for_target(
+                    session,
+                    target_id,
+                    historical=historical,
+                    view_mode=True,
+                ),
+                timeout=900 if historical else 600,
+            )
+    except asyncio.TimeoutError:
+        logger.error("View crawl timed out for target %s", target_id)
+        unregister_running(target_id)
+    except Exception as exc:
+        logger.error("View crawl failed for target %s: %s", target_id, exc, exc_info=True)
+        unregister_running(target_id)
+
+
+async def schedule_view_crawl_target(
+    target_id: UUID,
+    *,
+    historical: bool = False,
+) -> str:
+    """Start view crawl in background (visible browser + live feed)."""
+    asyncio.create_task(
+        _safe_execute_view_crawl(target_id, historical=historical),
+        name=f"view_crawl_{target_id}",
+    )
+    return "running_inline"
+
+
 async def schedule_crawl_target(target_id: UUID, *, run_inline_if_no_redis: bool = True) -> str:
     """
     Enqueue a crawl job. If Redis is off and run_inline_if_no_redis, runs in asyncio task.

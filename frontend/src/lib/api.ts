@@ -301,6 +301,27 @@ export async function updateTarget(
   )
 }
 
+export interface PurgeSummary {
+  target_id: string
+  evidence_deleted: number
+  comments_deleted: number
+  checkpoints_deleted: number
+  screenshots_deleted: number
+  monitoring_logs_deleted: number
+}
+
+export async function purgeTarget(targetId: string): Promise<PurgeSummary> {
+  return request<PurgeSummary>(`/targets/${targetId}/purge`, { method: 'DELETE' }, true)
+}
+
+export async function purgeTargetData(targetId: string): Promise<PurgeSummary> {
+  return request<PurgeSummary>(
+    `/targets/${targetId}/purge-data`,
+    { method: 'POST' },
+    true,
+  )
+}
+
 export interface PlatformPatrolInfo {
   id: string
   label: string
@@ -467,6 +488,67 @@ export async function runHistoricalCrawl(targetId: string): Promise<CrawlResultS
   return request<CrawlResultSummary>(
     `/crawlers/run/${targetId}/historical`,
     { method: 'POST' },
+    true,
+  )
+}
+
+/** View Crawling — visible browser + live feed (non-blocking). */
+export async function startViewCrawl(
+  targetId: string,
+): Promise<{ status: string; message: string; target_id?: string }> {
+  return request<{ status: string; message: string; target_id?: string }>(
+    `/crawlers/start/${targetId}/view`,
+    { method: 'POST' },
+    true,
+  )
+}
+
+export async function startViewHistoricalCrawl(
+  targetId: string,
+): Promise<{ status: string; message: string; target_id?: string }> {
+  return request<{ status: string; message: string; target_id?: string }>(
+    `/crawlers/start/${targetId}/view/historical`,
+    { method: 'POST' },
+    true,
+  )
+}
+
+export async function pauseTargetCrawl(
+  targetId: string,
+): Promise<{ status: string; target_id: string }> {
+  return request<{ status: string; target_id: string }>(
+    `/crawlers/${targetId}/pause`,
+    { method: 'POST' },
+    true,
+  )
+}
+
+export async function resumeTargetCrawl(
+  targetId: string,
+): Promise<{ status: string; target_id: string }> {
+  return request<{ status: string; target_id: string }>(
+    `/crawlers/${targetId}/resume`,
+    { method: 'POST' },
+    true,
+  )
+}
+
+export async function stopTargetCrawl(
+  targetId: string,
+): Promise<{ status: string; target_id: string }> {
+  return request<{ status: string; target_id: string }>(
+    `/crawlers/${targetId}/stop`,
+    { method: 'POST' },
+    true,
+  )
+}
+
+export async function getCrawlViewStatus(
+  targetId: string,
+): Promise<{ target_id: string; status: string; view_mode: boolean }> {
+  return request<{ target_id: string; status: string; view_mode: boolean }>(
+    `/crawlers/${targetId}/view-status`,
+    {},
     true,
   )
 }

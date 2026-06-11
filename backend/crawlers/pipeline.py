@@ -72,6 +72,7 @@ async def run_crawl_for_target(
     max_comments: int = 50,
     crawl_mode: str = "single",
     historical: bool = False,
+    view_mode: bool = False,
 ) -> dict:
     """
     Crawl one target, persist new comments, classify, create evidence when abusive.
@@ -90,11 +91,14 @@ async def run_crawl_for_target(
         raise ValueError(f"Crawl already running for @{target.username}")
 
     platform = target.platform
+    run_mode = "view_historical" if (view_mode and historical) else (
+        "view" if view_mode else ("historical" if historical else crawl_mode)
+    )
     register_running(
         target.id,
         target.username,
         platform.value,
-        mode="historical" if historical else crawl_mode,
+        mode=run_mode,
     )
     try:
         crawler_cls = get_crawler_class(platform)
@@ -148,11 +152,19 @@ async def run_crawl_for_target(
             platform=platform.value,
         )
 
+        crawler_ctor_kwargs: dict = {}
+        if view_mode:
+            from services.crawl_view_state import crawl_view_state
+
+            crawl_view_state.start(str(target_id), view_mode=True)
+            crawler_ctor_kwargs["headless"] = False
+
         async with sem:
-            async with crawler_cls() as crawler:
+            async with crawler_cls(**crawler_ctor_kwargs) as crawler:
                 crawl_kwargs: dict = {
                     "max_comments": max_comments,
                     "known_hashes": known_hashes,
+                    "crawl_target_id": str(target_id) if view_mode else None,
                 }
                 if run_historical:
                     crawl_kwargs["historical"] = True
@@ -458,8 +470,33 @@ async def run_crawl_for_target(
                     "duration_seconds": crawl_result.duration_seconds,
                     "evidence_ids": evidence_ids_created,
                 }
+    except Exception as exc:
+        from services.crawl_pause import CrawlPausedStop
+
+        if isinstance(exc, CrawlPausedStop):
+            log.success = False
+            log.error_message = "Crawl stopped by operator"
+            log.completed_at = datetime.now(timezone.utc)
+            await session.commit()
+            return {
+                "target_id": str(target_id),
+                "target_username": target.username,
+                "platform": platform.value,
+                "log_id": str(log.id),
+                "historical": run_historical,
+                "success": False,
+                "error": "Crawl stopped by operator",
+                "comments_new": new_count,
+                "abusive_detected": abusive_count,
+                "evidence_ids": evidence_ids_created,
+            }
+        raise
     finally:
         unregister_running(target_id)
+        if view_mode:
+            from services.crawl_view_state import crawl_view_state
+
+            crawl_view_state.reset(str(target_id))
 
 
 async def run_crawl_all_active(session: AsyncSession) -> list[dict]:

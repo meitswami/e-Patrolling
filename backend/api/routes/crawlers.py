@@ -28,7 +28,7 @@ from database.models import AIResult, AccusedProfile, EvidenceReport, Monitoring
 from crawlers.crawl_state import list_running
 from task_queue.producer import is_redis_available
 from task_queue.scheduler import get_scheduler_state, request_crawl_stop
-from task_queue.tasks import schedule_crawl_all, schedule_crawl_target
+from task_queue.tasks import schedule_crawl_all, schedule_crawl_target, schedule_view_crawl_target
 
 router = APIRouter()
 
@@ -176,6 +176,157 @@ async def run_crawl_sync(
         )
         raise HTTPException(status_code=code, detail=msg) from exc
     return CrawlResultSummary(**summary)
+
+
+@router.post("/start/{target_id}/view", response_model=CrawlTriggerResponse)
+async def start_view_crawl_target(
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+) -> CrawlTriggerResponse:
+    """Queue view crawl — opens visible browser; monitor via live feed."""
+    result = await session.execute(select(TargetAccount).where(TargetAccount.id == target_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+    from crawlers.crawl_state import is_target_running
+
+    if is_target_running(target_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Crawl already running for this target",
+        )
+    mode = await schedule_view_crawl_target(target_id)
+    return CrawlTriggerResponse(
+        status=mode,
+        target_id=target_id,
+        message=f"View crawl {mode} — visible browser will open on this PC",
+    )
+
+
+@router.post("/start/{target_id}/view/historical", response_model=CrawlTriggerResponse)
+async def start_view_historical_crawl_target(
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+) -> CrawlTriggerResponse:
+    """Queue historical view crawl with visible browser."""
+    result = await session.execute(select(TargetAccount).where(TargetAccount.id == target_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+    from crawlers.crawl_state import is_target_running
+
+    if is_target_running(target_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Crawl already running for this target",
+        )
+    mode = await schedule_view_crawl_target(target_id, historical=True)
+    return CrawlTriggerResponse(
+        status=mode,
+        target_id=target_id,
+        message=f"Historical view crawl {mode}",
+    )
+
+
+@router.post("/run/{target_id}/view", response_model=CrawlResultSummary)
+async def run_view_crawl_sync(
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+) -> CrawlResultSummary:
+    """Run crawl with visible browser + live feed (View Crawling mode)."""
+    try:
+        summary = await run_crawl_for_target(session, target_id, view_mode=True)
+    except ValueError as exc:
+        msg = str(exc)
+        code = (
+            status.HTTP_409_CONFLICT
+            if "already running" in msg.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=msg) from exc
+    return CrawlResultSummary(**summary)
+
+
+@router.post("/run/{target_id}/view/historical", response_model=CrawlResultSummary)
+async def run_view_historical_crawl_sync(
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+) -> CrawlResultSummary:
+    """Historical crawl with visible browser (View Crawling mode)."""
+    try:
+        summary = await run_crawl_for_target(
+            session, target_id, historical=True, view_mode=True
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        code = (
+            status.HTTP_409_CONFLICT
+            if "already running" in msg.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=msg) from exc
+    return CrawlResultSummary(**summary)
+
+
+@router.post("/{target_id}/pause")
+async def pause_target_crawl(
+    target_id: UUID,
+    _user: User = Depends(require_analyst),
+) -> dict:
+    """Pause an in-flight view crawl for this target."""
+    from services.crawl_view_state import crawl_view_state
+
+    if not crawl_view_state.pause(str(target_id)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No running view crawl to pause for this target",
+        )
+    return {"status": "paused", "target_id": str(target_id)}
+
+
+@router.post("/{target_id}/resume")
+async def resume_target_crawl(
+    target_id: UUID,
+    _user: User = Depends(require_analyst),
+) -> dict:
+    """Resume a paused view crawl for this target."""
+    from services.crawl_view_state import crawl_view_state
+
+    if not crawl_view_state.resume(str(target_id)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No paused view crawl to resume for this target",
+        )
+    return {"status": "resumed", "target_id": str(target_id)}
+
+
+@router.post("/{target_id}/stop")
+async def stop_target_crawl(
+    target_id: UUID,
+    _user: User = Depends(require_analyst),
+) -> dict:
+    """Stop an in-flight view crawl for this target."""
+    from services.crawl_view_state import crawl_view_state
+
+    if not crawl_view_state.stop(str(target_id)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active view crawl to stop for this target",
+        )
+    return {"status": "stopped", "target_id": str(target_id)}
+
+
+@router.get("/{target_id}/view-status")
+async def target_crawl_view_status(
+    target_id: UUID,
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """View crawl pause/resume state for a target."""
+    from services.crawl_view_state import crawl_view_state
+
+    return crawl_view_state.get_status(str(target_id))
 
 
 @router.post("/run/{target_id}/historical", response_model=CrawlResultSummary)

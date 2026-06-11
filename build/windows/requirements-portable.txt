@@ -1,0 +1,27 @@
+# Lightweight portable build — lexicon-only, no ML / pandas
+fastapi>=0.115.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+pydantic>=2.12.0
+pydantic-settings>=2.6.0
+email-validator>=2.0.0
+python-dotenv>=1.0.1
+sqlalchemy[asyncio]>=2.0.25
+asyncpg>=0.30.0
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.1.0
+passlib[bcrypt]>=1.7.4
+playwright>=1.41.0
+httpx>=0.26.0
+langdetect>=1.0.9
+openpyxl>=3.1.2
+reportlab>=4.1.0
+Pillow>=10.2.0
+structlog>=24.1.0
+python-dateutil>=2.8.2
+pytz>=2024.1
+shortuuid>=1.0.11
+apscheduler>=3.10.4
+pyinstaller>=6.3.0
+
+redis>=5.0.0

@@ -21,10 +21,11 @@ class TwitterCrawler(BaseCrawler):
     ]
 
     def __init__(self, **kwargs) -> None:
+        headless = kwargs.pop("headless", None)
         super().__init__(
             platform=Platform.TWITTER,
             storage_path=settings.SCREENSHOTS_PATH / "twitter",
-            headless=settings.CRAWLER_HEADLESS,
+            headless=headless if headless is not None else settings.CRAWLER_HEADLESS,
             timeout_ms=settings.CRAWLER_TIMEOUT_MS,
             **kwargs,
         )

@@ -38,12 +38,13 @@ class InstagramCrawler(BaseCrawler):
         *,
         login_username: Optional[str] = None,
         login_password: Optional[str] = None,
+        headless: Optional[bool] = None,
         **kwargs,
     ) -> None:
         super().__init__(
             platform=Platform.INSTAGRAM,
             storage_path=settings.SCREENSHOTS_PATH / "instagram",
-            headless=settings.CRAWLER_HEADLESS,
+            headless=headless if headless is not None else settings.CRAWLER_HEADLESS,
             timeout_ms=settings.CRAWLER_TIMEOUT_MS,
             **kwargs,
         )
@@ -396,6 +397,7 @@ class InstagramCrawler(BaseCrawler):
         max_comments_per_post: Optional[int] = None,
         checkpoint: Optional[object] = None,
         on_post_saved: Optional[Callable[[], Awaitable[None]]] = None,
+        crawl_target_id: Optional[str] = None,
     ) -> CrawlResult:
         """
         Full crawl for a target profile.
@@ -428,6 +430,7 @@ class InstagramCrawler(BaseCrawler):
                     or settings.HISTORICAL_CRAWL_MAX_COMMENTS_PER_POST,
                     checkpoint=checkpoint,
                     on_post_saved=on_post_saved,
+                    crawl_target_id=crawl_target_id,
                 )
             else:
                 comments = await self.crawl_comments(target_username, post_url, max_comments)
@@ -465,6 +468,7 @@ class InstagramCrawler(BaseCrawler):
         max_comments_per_post: int,
         checkpoint: Optional[object] = None,
         on_post_saved: Optional[Callable[[], Awaitable[None]]] = None,
+        crawl_target_id: Optional[str] = None,
     ) -> tuple[List[CrawledComment], int, dict]:
         """Scroll profile, visit posts, incremental comments using per-target checkpoint."""
         from crawlers.instagram.historical import collect_post_urls, crawl_post_comments
@@ -492,6 +496,7 @@ class InstagramCrawler(BaseCrawler):
             target_username,
             max_posts=max_posts,
             scroll_rounds=settings.HISTORICAL_CRAWL_PROFILE_SCROLLS,
+            crawl_target_id=crawl_target_id,
         )
 
         from websocket.events import broadcast_crawl_activity
@@ -521,7 +526,10 @@ class InstagramCrawler(BaseCrawler):
 
         all_comments: List[CrawledComment] = []
         run_posts: list[dict] = []
+        from services.crawl_pause import check_crawl_pause
+
         for i, url in enumerate(post_urls, start=1):
+            await check_crawl_pause(crawl_target_id)
             pid = extract_post_id(url)
             post_cp = ckpt.get_post(url) if ckpt else None
             known_ids = post_cp.known_comment_ids if post_cp else set()
@@ -552,6 +560,7 @@ class InstagramCrawler(BaseCrawler):
                     known_comment_ids=known_ids,
                     known_hashes=known_hashes,
                     incremental=True,
+                    crawl_target_id=crawl_target_id,
                 )
                 batch = outcome.comments
                 all_comments.extend(batch)

@@ -24,8 +24,8 @@ import { getToken } from '@/lib/auth'
 import { buildApiUrl } from '@/lib/constants'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ProfilePreviewDropdown } from '@/components/ProfilePreviewDropdown'
+import { ViewCrawlingPanel } from '@/components/crawl/ViewCrawlingPanel'
 import type { Platform, TargetAccount, TargetSource } from '@/types'
-import { ProfilePreviewDropdown } from '@/components/ProfilePreviewDropdown'
 
 const PLATFORMS = ACTIVE_PATROL_PLATFORMS
 
@@ -53,6 +53,7 @@ export default function TargetsPage() {
     username: string
   } | null>(null)
   const [purging, setPurging] = useState(false)
+  const [viewCrawlTarget, setViewCrawlTarget] = useState<TargetAccount | null>(null)
 
   const loadTargets = useCallback(async () => {
     const source = sourceFilter === 'all' ? undefined : sourceFilter
@@ -243,6 +244,8 @@ export default function TargetsPage() {
         <strong className="text-patrol-text">Run crawl</strong> checks recent activity on the profile.
         <strong className="ml-2 text-patrol-text">Crawl history</strong> scrolls older posts and reads
         comments on each (Instagram; takes longer).
+        <strong className="ml-2 text-patrol-text">View Crawling</strong> opens a visible browser on this
+        PC with live feed, Pause/Resume, and abusive-content alerts.
       </p>
       <div className="mb-4 flex flex-wrap justify-end gap-2">
         <Link
@@ -424,6 +427,16 @@ export default function TargetsPage() {
                 >
                   {active ? 'Pause' : 'Resume'}
                 </button>
+                {active && (
+                  <button
+                    type="button"
+                    onClick={() => setViewCrawlTarget(item)}
+                    className="rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-300 hover:bg-violet-500/20"
+                    title="Open visible browser with live crawl feed"
+                  >
+                    View Crawling
+                  </button>
+                )}
                 {active && !running && (
                   <>
                     <button
@@ -468,6 +481,14 @@ export default function TargetsPage() {
           )
         })}
       </div>
+      {viewCrawlTarget && (
+        <ViewCrawlingPanel
+          targetId={viewCrawlTarget.id}
+          username={viewCrawlTarget.username}
+          platform={viewCrawlTarget.platform}
+          onClose={() => setViewCrawlTarget(null)}
+        />
+      )}
       <ConfirmDialog
         isOpen={confirmAction !== null}
         title={confirmAction?.type === 'purge' ? 'Delete Target & All Data' : 'Clear Target Data'}

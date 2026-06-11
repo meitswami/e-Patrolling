@@ -267,6 +267,7 @@ def register_routers() -> None:
     from api.routes.discovery import router as discovery_router
     from api.routes.target_import import router as target_import_router
     from api.routes.profile_preview import router as profile_preview_router
+    from api.routes.verification import router as verification_router
 
     app.include_router(public_router, prefix=f"{PREFIX}/public", tags=["Public Website"])
     app.include_router(
@@ -300,6 +301,11 @@ def register_routers() -> None:
 
 register_routers()
 setup_logging()
+
+if settings.PATROL_PORTABLE:
+    from portable.static_ui import mount_portable_ui
+
+    mount_portable_ui(app)
 
 
 # ── Exception Handlers ───────────────────────────────────────

@@ -12,3 +12,14 @@ storage/
 ai_models/cache/
 .DS_Store
 .code-bridge/
+
+# Windows portable build outputs (never commit — use GitHub Releases for .exe)
+build/windows/dist/
+build/windows/release/
+build/windows/.venv-build/
+build/windows/dist-ui/
+build/windows/certs/*.pfx
+build/windows/certs/*.cer
+
+# Accidental loose assets at repo root
+aa15fabf-*.png
