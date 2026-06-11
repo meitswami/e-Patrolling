@@ -32,9 +32,11 @@ def _settings_env_files() -> tuple[str, ...]:
     if portable and Path(portable).is_file():
         files.append(portable)
     elif getattr(sys, "frozen", False):
-        beside_exe = Path(sys.executable).resolve().parent / ".env"
-        if beside_exe.is_file():
-            files.append(str(beside_exe))
+        exe_dir = Path(sys.executable).resolve().parent
+        for candidate in (exe_dir / "app_data" / ".env", exe_dir / ".env"):
+            if candidate.is_file():
+                files.append(str(candidate))
+                break
     return tuple(files)
 
 

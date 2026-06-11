@@ -22,6 +22,14 @@ def _resolve_paths() -> tuple[Path, Path]:
     return repo, repo
 
 
+def _portable_env_file(exe_dir: Path) -> Path | None:
+    """Config lives in app_data/.env (release layout); .env beside exe is legacy fallback."""
+    for candidate in (exe_dir / "app_data" / ".env", exe_dir / ".env"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _configure_env(bundle: Path, exe_dir: Path) -> None:
     os.environ.setdefault("PATROL_PORTABLE", "1")
     os.environ.setdefault("ENVIRONMENT", "production")
@@ -30,8 +38,8 @@ def _configure_env(bundle: Path, exe_dir: Path) -> None:
     os.environ.setdefault("USE_ML_CLASSIFIER", "false")
     os.environ.setdefault("PRELOAD_AI_MODELS", "false")
 
-    env_file = exe_dir / ".env"
-    if env_file.is_file():
+    env_file = _portable_env_file(exe_dir)
+    if env_file is not None:
         os.environ["PATROL_ENV_FILE"] = str(env_file)
         try:
             from dotenv import load_dotenv

@@ -103,16 +103,24 @@ if (Test-Path $browserDir) {
     Copy-Item -Recurse $browserDir (Join-Path $ReleaseApp "playwright-browsers")
 }
 
-# Portable .env template
-Copy-Item -Force (Join-Path $PSScriptRoot ".env.portable") (Join-Path $ReleaseApp ".env.example")
-if (-not (Test-Path (Join-Path $ReleaseApp ".env"))) {
-    Copy-Item -Force (Join-Path $PSScriptRoot ".env.portable") (Join-Path $ReleaseApp ".env")
+# Config + docs in app_data/ (not beside .exe — cleaner release root)
+$AppData = Join-Path $ReleaseApp "app_data"
+$AppDocs = Join-Path $AppData "docs"
+New-Item -ItemType Directory -Force -Path $AppDocs | Out-Null
+$EnvPortable = Join-Path $PSScriptRoot ".env.portable"
+$EnvTarget = Join-Path $AppData ".env"
+if (-not (Test-Path $EnvTarget)) {
+    Copy-Item -Force $EnvPortable $EnvTarget
 }
+Copy-Item -Force $EnvPortable (Join-Path $AppDocs "env.example")
 
 # Storage seed
 $storageDest = Join-Path $ReleaseApp "storage"
 New-Item -ItemType Directory -Force -Path $storageDest | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $storageDest "sessions") | Out-Null
+
+# Hide app_data from casual browsing (config still editable if needed)
+cmd /c "attrib +h `"$AppData`"" 2>$null | Out-Null
 
 # ── 6. Code signing ─────────────────────────────────────────
 $ReleaseExe = Join-Path $ReleaseApp $ExeName
@@ -121,25 +129,27 @@ if (-not $SkipSign) {
     Copy-Item -Force (Join-Path $PSScriptRoot "certs\e-patrol-codesign.cer") (Join-Path $ReleaseApp "GenXAI-Shakti-CodeSign.cer") -ErrorAction SilentlyContinue
 }
 
-# ── 7. README ───────────────────────────────────────────────
+# ── 7. Docs (inside app_data/docs — not in release root) ───
 @'
 Shakti - the 3rd Eye | Portable Edition
 ========================================
 GenXAI Analytics Pvt. Ltd. | Created by MEIT SWAMI | Jaipur, Rajasthan
 
 QUICK START (no installation):
-1. Edit .env - set DATABASE_URL (Supabase) and JWT_SECRET_KEY
+1. Edit app_data\.env - set DATABASE_URL (Supabase) and JWT_SECRET_KEY
+   (In File Explorer: View -> Show -> Hidden items to see app_data)
 2. Double-click "Shakti - the 3rd Eye.exe"
 3. Browser opens automatically - login at /admin
 
 VIEW CRAWLING:
 Targets -> View Crawling -> Run Crawl / Crawl History / Pause / Resume
 
-REDUCE WINDOWS SMARTSCREEN WARNING:
-Install GenXAI-Shakti-CodeSign.cer into Trusted Root + Trusted Publishers.
-
 SIZE: ~800 MB (Chromium included). No Docker required.
-'@ | Set-Content -Encoding UTF8 (Join-Path $ReleaseApp "README.txt")
+'@ | Set-Content -Encoding UTF8 (Join-Path $AppDocs "README.txt")
+
+if (Test-Path (Join-Path $PSScriptRoot "SETUP-DATABASE.txt")) {
+    Copy-Item -Force (Join-Path $PSScriptRoot "SETUP-DATABASE.txt") (Join-Path $AppDocs "SETUP-DATABASE.txt")
+}
 
 Write-Host ""
 Write-Host "=== BUILD COMPLETE ===" -ForegroundColor Green
