@@ -41,10 +41,10 @@ Supabase **direct** host `db.<project>.supabase.co` resolves to **IPv6 only**. T
 
 The backend auto-fixes `postgresql://` → `postgresql+asyncpg://` if you forget, but set it explicitly in `.env`.
 
-Example (replace host + password from dashboard — **do not guess** `aws-0` vs `aws-1`):
+Example (replace host + password from dashboard — **do not guess** region or `aws-0` vs `aws-1`; this project uses `aws-1-ap-northeast-1`):
 
 ```env
-DATABASE_URL=postgresql+asyncpg://postgres.whzmtzatkxgiomwlwkgy:YOUR_PASSWORD@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
+DATABASE_URL=postgresql+asyncpg://postgres.whzmtzatkxgiomwlwkgy:YOUR_PASSWORD@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres
 DATABASE_SSL=true
 DATABASE_FORCE_IPV4=false
 ENVIRONMENT=production
@@ -53,7 +53,7 @@ ENVIRONMENT=production
 Test from EC2 (use **your** pooler host from the dashboard):
 
 ```bash
-nc -4 -zv aws-1-ap-south-1.pooler.supabase.com 5432
+nc -4 -zv aws-1-ap-northeast-1.pooler.supabase.com 5432
 curl -s http://127.0.0.1:5000/health
 ```
 

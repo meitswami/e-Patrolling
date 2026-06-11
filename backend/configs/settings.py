@@ -10,6 +10,8 @@ Usage:
 """
 
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Annotated, List, Optional
 
@@ -18,6 +20,22 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Repo root (SocialMediaMonitoringTool/) — two levels up from backend/configs/
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _settings_env_files() -> tuple[str, ...]:
+    """Env files in load order; later entries override earlier ones."""
+    files: list[str] = [
+        str(_PROJECT_ROOT / ".env"),
+        str(_PROJECT_ROOT / "backend" / ".env"),
+    ]
+    portable = os.environ.get("PATROL_ENV_FILE")
+    if portable and Path(portable).is_file():
+        files.append(portable)
+    elif getattr(sys, "frozen", False):
+        beside_exe = Path(sys.executable).resolve().parent / ".env"
+        if beside_exe.is_file():
+            files.append(str(beside_exe))
+    return tuple(files)
 
 
 def _parse_allowed_origins(value: object) -> List[str]:
@@ -49,11 +67,8 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        # Root .env first; backend/.env overrides (common on EC2 when cwd is backend/)
-        env_file=(
-            str(_PROJECT_ROOT / ".env"),
-            str(_PROJECT_ROOT / "backend" / ".env"),
-        ),
+        # Portable .env beside the .exe is appended last (highest priority when frozen).
+        env_file=_settings_env_files(),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",

@@ -32,7 +32,13 @@ def _configure_env(bundle: Path, exe_dir: Path) -> None:
 
     env_file = exe_dir / ".env"
     if env_file.is_file():
-        os.environ.setdefault("DOTENV_PATH", str(env_file))
+        os.environ["PATROL_ENV_FILE"] = str(env_file)
+        try:
+            from dotenv import load_dotenv
+
+            load_dotenv(env_file, override=True)
+        except ImportError:
+            pass
 
     browsers = exe_dir / "playwright-browsers"
     if browsers.is_dir():

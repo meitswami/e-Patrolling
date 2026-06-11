@@ -37,6 +37,7 @@ SETTING_KEYS = frozenset(
 
 _cache: dict[str, str] = {}
 _loaded = False
+_decrypt_warned: set[str] = set()
 
 
 def _fernet():
@@ -96,7 +97,13 @@ def get_instagram_password() -> Optional[str]:
         try:
             return decrypt_secret(raw)
         except Exception as exc:
-            logger.error("Failed to decrypt instagram_password: %s", exc)
+            if "instagram_password" not in _decrypt_warned:
+                _decrypt_warned.add("instagram_password")
+                logger.error(
+                    "Failed to decrypt instagram_password (re-connect Instagram in Settings "
+                    "or set JWT_SECRET_KEY to the key used when the password was saved): %s",
+                    exc,
+                )
             return settings.INSTAGRAM_PASSWORD
     return settings.INSTAGRAM_PASSWORD
 
