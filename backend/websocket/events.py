@@ -61,6 +61,7 @@ async def broadcast_crawl_activity(
     message: str,
     detail: Optional[str] = None,
     platform: str = "instagram",
+    log_id: Optional[str] = None,
 ) -> None:
     """
     Real-time crawl activity stream — replaces the visible browser window.
@@ -77,16 +78,25 @@ async def broadcast_crawl_activity(
       - crawl_finished: Crawl completed for the target
       - crawl_error: An error occurred
     """
+    event_data = {
+        "target_username": target_username,
+        "platform": platform,
+        "activity_type": activity_type,
+        "message": message,
+        "detail": detail,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    from crawlers.crawl_context import get_crawl_log_id
+    from services.crawl_session_tracker import record_activity
+
+    active_log_id = get_crawl_log_id()
+    if active_log_id:
+        record_activity(active_log_id, event_data)
+
     await ws_manager.broadcast_json(
         {
             "type": "crawl_activity",
-            "data": {
-                "target_username": target_username,
-                "platform": platform,
-                "activity_type": activity_type,
-                "message": message,
-                "detail": detail,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
+            "data": event_data,
         }
     )

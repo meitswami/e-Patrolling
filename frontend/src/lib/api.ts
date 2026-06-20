@@ -371,8 +371,39 @@ export interface CrawlLogItem {
   success: boolean
   error_message: string | null
   duration_seconds: number | null
+  duration_formatted?: string | null
+  pages_crawled?: number
+  crawl_mode?: string | null
   started_at: string
   completed_at: string | null
+}
+
+export interface CrawlSessionActivity {
+  target_username?: string
+  platform?: string
+  activity_type?: string
+  message?: string
+  detail?: string | null
+  timestamp?: string
+}
+
+export interface CrawlSessionPerformance {
+  sample_count?: number
+  sample_interval_sec?: number
+  spike_threshold_percent?: number
+  start_snapshot?: Record<string, unknown>
+  end_snapshot?: Record<string, unknown>
+  peak?: Record<string, number>
+  average?: Record<string, number>
+  spikes?: Array<{ metric: string; value: number; threshold: number; timestamp: string }>
+}
+
+export interface CrawlSessionData {
+  activity_log?: CrawlSessionActivity[]
+  system_specs?: Record<string, unknown>
+  performance?: CrawlSessionPerformance
+  tracking_started_at?: string
+  tracking_stopped_at?: string
 }
 
 export interface CrawlResultSummary {
@@ -424,10 +455,18 @@ export interface CrawlLogResults {
   target_username: string | null
   platform: string
   success: boolean
+  comments_found: number
   comments_new: number
   abusive_detected: number
+  critical_detected: number
+  duration_seconds: number | null
+  duration_formatted?: string | null
+  pages_crawled: number
+  crawl_mode?: string | null
+  error_message?: string | null
   started_at: string
   completed_at: string | null
+  session_data: CrawlSessionData
   evidence: CrawlLogEvidenceItem[]
 }
 
@@ -444,12 +483,18 @@ export async function clearCrawlErrorLogs(allFailed = false): Promise<{ removed:
   )
 }
 
-export async function listCrawlLogs(limit = 20): Promise<CrawlLogItem[]> {
-  return request<CrawlLogItem[]>(`/crawlers/logs?limit=${limit}`, {}, true)
+export async function listCrawlLogs(limit = 20, targetId?: string): Promise<CrawlLogItem[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (targetId) params.set('target_id', targetId)
+  return request<CrawlLogItem[]>(`/crawlers/logs?${params.toString()}`, {}, true)
 }
 
 export async function getCrawlLogResults(logId: string): Promise<CrawlLogResults> {
   return request<CrawlLogResults>(`/crawlers/logs/${logId}/results`, {}, true)
+}
+
+export function getCrawlSessionPdfUrl(logId: string): string {
+  return buildApiUrl(`/crawlers/logs/${logId}/export.pdf`)
 }
 
 /** Blocking — holds API for minutes; avoid on production. Prefer scheduleCrawlAll. */

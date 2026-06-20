@@ -58,6 +58,12 @@ _CRAWL_TIMEOUT_REGULAR = 300
 _CRAWL_TIMEOUT_HISTORICAL = 900
 
 
+def _mark_log_completed(log: MonitoringLog) -> None:
+    log.completed_at = datetime.now(timezone.utc)
+    if log.started_at:
+        log.duration_seconds = (log.completed_at - log.started_at).total_seconds()
+
+
 async def _load_known_hashes(session: AsyncSession, target_id: UUID) -> set[str]:
     result = await session.execute(
         select(CrawledComment.content_hash).where(CrawledComment.target_id == target_id)
@@ -94,6 +100,15 @@ async def run_crawl_for_target(
     run_mode = "view_historical" if (view_mode and historical) else (
         "view" if view_mode else ("historical" if historical else crawl_mode)
     )
+
+    from services import system_settings as app_settings
+
+    if platform == PlatformType.INSTAGRAM and not app_settings.instagram_auth_configured():
+        raise ValueError(
+            "Instagram not connected. Open Settings → Connect Instagram, log in in the "
+            "browser window, then crawl again."
+        )
+
     register_running(
         target.id,
         target.username,
@@ -120,9 +135,16 @@ async def run_crawl_for_target(
         target_id=target.id,
         platform=platform,
         started_at=datetime.now(timezone.utc),
+        crawl_mode=run_mode,
     )
     session.add(log)
     await session.flush()
+
+    from crawlers.crawl_context import reset_crawl_log_id, set_crawl_log_id
+    from services.crawl_session_tracker import start_tracking, stop_tracking
+
+    set_crawl_log_id(log.id)
+    await start_tracking(log.id)
 
     abusive_count = 0
     critical_count = 0
@@ -130,14 +152,6 @@ async def run_crawl_for_target(
     evidence_ids_created: list[str] = []
 
     run_historical = historical and platform == PlatformType.INSTAGRAM
-
-    from services import system_settings as app_settings
-
-    if platform == PlatformType.INSTAGRAM and not app_settings.instagram_auth_configured():
-        raise ValueError(
-            "Instagram not connected. Open Settings → Connect Instagram, log in in the "
-            "browser window, then crawl again."
-        )
 
     try:
         sem = _get_browser_semaphore()
@@ -194,7 +208,7 @@ async def run_crawl_for_target(
                     )
                     log.success = False
                     log.error_message = f"Crawl timed out after {crawl_timeout}s"
-                    log.completed_at = datetime.now(timezone.utc)
+                    _mark_log_completed(log)
                     await session.commit()
                     return {
                         "target_id": str(target_id),
@@ -220,7 +234,7 @@ async def run_crawl_for_target(
                             "and connect Instagram in Settings (session cookies)."
                         )
                     log.error_message = err
-                    log.completed_at = datetime.now(timezone.utc)
+                    _mark_log_completed(log)
                     log.duration_seconds = crawl_result.duration_seconds
                     await session.commit()
                     return {
@@ -476,7 +490,7 @@ async def run_crawl_for_target(
         if isinstance(exc, CrawlPausedStop):
             log.success = False
             log.error_message = "Crawl stopped by operator"
-            log.completed_at = datetime.now(timezone.utc)
+            _mark_log_completed(log)
             await session.commit()
             return {
                 "target_id": str(target_id),
@@ -492,6 +506,15 @@ async def run_crawl_for_target(
             }
         raise
     finally:
+        try:
+            session_data = await stop_tracking(log.id)
+            if session_data:
+                log.session_data = session_data
+                log.crawl_mode = run_mode
+                await session.commit()
+        except Exception as exc:
+            logger.warning("Failed to persist crawl session data for log %s: %s", log.id, exc)
+        reset_crawl_log_id()
         unregister_running(target_id)
         if view_mode:
             from services.crawl_view_state import crawl_view_state

@@ -18,30 +18,7 @@ import {
   type CrawlerStatus,
 } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-
-function formatCrawlTimestamp(startedAt: string, completedAt: string | null): string {
-  const start = new Date(startedAt)
-  if (Number.isNaN(start.getTime())) return startedAt
-  const datePart = start.toLocaleDateString(undefined, {
-    weekday: 'short',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-  const timePart = start.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-  if (completedAt) {
-    const end = new Date(completedAt)
-    if (!Number.isNaN(end.getTime()) && end.getTime() > start.getTime()) {
-      const secs = Math.round((end.getTime() - start.getTime()) / 1000)
-      return `${datePart} · ${timePart} (${secs}s)`
-    }
-  }
-  return `${datePart} · ${timePart}`
-}
+import { formatCrawlTimestamp } from '@/lib/duration'
 
 export default function MonitoringPage() {
   return (
@@ -153,6 +130,12 @@ function MonitoringPageContent() {
             className="rounded-lg border border-patrol-border px-3 py-1.5 text-xs text-patrol-muted hover:text-patrol-text hover:border-patrol-accent/40 transition"
           >
             Show All
+          </Link>
+          <Link
+            href={`/monitoring/target/${targetFilter}/history`}
+            className="rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1.5 text-xs text-patrol-accent hover:bg-patrol-accent/20 transition"
+          >
+            Crawl Done History
           </Link>
         </div>
       )}
@@ -316,7 +299,7 @@ function MonitoringPageContent() {
               <span className="ml-auto text-xs text-patrol-accent">View proof →</span>
             </div>
             <p className="mt-1.5 text-xs text-patrol-muted">
-              {formatCrawlTimestamp(log.started_at, log.completed_at)}
+              {formatCrawlTimestamp(log.started_at, log.completed_at, log.duration_seconds)}
             </p>
             {log.error_message && (
               <p className="mt-1 text-xs text-red-400">{log.error_message}</p>

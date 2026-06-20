@@ -59,11 +59,24 @@ class CrawlLogResultsResponse(BaseModel):
     target_username: Optional[str] = None
     platform: str
     success: bool
+    comments_found: int = 0
     comments_new: int
     abusive_detected: int
+    critical_detected: int = 0
+    duration_seconds: Optional[float] = None
+    duration_formatted: Optional[str] = None
+    pages_crawled: int = 0
+    crawl_mode: Optional[str] = None
+    error_message: Optional[str] = None
     started_at: datetime
     completed_at: Optional[datetime] = None
+    session_data: Dict[str, Any] = {}
     evidence: List[CrawlLogEvidenceItem] = []
+
+
+class CrawlSessionDetailResponse(CrawlLogResultsResponse):
+    """Full crawl session including live activity and system performance."""
+    pass
 
 
 class PlatformPatrolInfo(BaseModel):
@@ -107,6 +120,9 @@ class MonitoringLogItem(BaseModel):
     success: bool
     error_message: Optional[str]
     duration_seconds: Optional[float]
+    duration_formatted: Optional[str] = None
+    pages_crawled: Optional[int] = 0
+    crawl_mode: Optional[str] = None
     started_at: datetime
     completed_at: Optional[datetime]
 

@@ -439,6 +439,13 @@ export default function TargetsPage() {
                 )}
                 {active && !running && (
                   <>
+                    <Link
+                      href={`/monitoring/target/${item.id}/history`}
+                      className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-300 hover:bg-sky-500/20"
+                      title="View all past crawl sessions for this target"
+                    >
+                      Crawl Done History
+                    </Link>
                     <button
                       type="button"
                       disabled={running}

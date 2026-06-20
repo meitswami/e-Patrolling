@@ -1,8 +1,10 @@
 """Crawler control API — trigger crawls, view status and logs."""
 
+from datetime import timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +32,25 @@ from task_queue.producer import is_redis_available
 from task_queue.scheduler import get_scheduler_state, request_crawl_stop
 from task_queue.tasks import schedule_crawl_all, schedule_crawl_target, schedule_view_crawl_target
 
+from utils.duration_format import duration_from_timestamps, format_duration_seconds
+
 router = APIRouter()
+
+
+def _log_duration_formatted(log: MonitoringLog) -> str:
+    if log.duration_seconds is not None:
+        return format_duration_seconds(log.duration_seconds)
+    if log.started_at and log.completed_at:
+        delta = (log.completed_at - log.started_at).total_seconds()
+        return format_duration_seconds(delta)
+    return "00 D 00H 00M 00S"
+
+
+def _monitoring_log_item(log: MonitoringLog, target_username: str | None) -> MonitoringLogItem:
+    item = MonitoringLogItem.model_validate(log)
+    item.target_username = target_username
+    item.duration_formatted = _log_duration_formatted(log)
+    return item
 
 
 @router.get("/status", response_model=CrawlerStatusResponse)
@@ -428,20 +448,22 @@ async def clear_crawl_error_logs(
 @router.get("/logs", response_model=list[MonitoringLogItem])
 async def list_crawl_logs(
     limit: int = Query(20, ge=1, le=100),
+    target_id: UUID | None = Query(None, description="Filter logs for a specific target"),
     session: AsyncSession = Depends(get_session),
     _user: User = Depends(get_current_user),
 ) -> list[MonitoringLogItem]:
-    result = await session.execute(
+    q = (
         select(MonitoringLog, TargetAccount.username)
         .outerjoin(TargetAccount, MonitoringLog.target_id == TargetAccount.id)
         .order_by(MonitoringLog.started_at.desc())
         .limit(limit)
     )
+    if target_id:
+        q = q.where(MonitoringLog.target_id == target_id)
+    result = await session.execute(q)
     items: list[MonitoringLogItem] = []
     for log, target_username in result.all():
-        item = MonitoringLogItem.model_validate(log)
-        item.target_username = target_username
-        items.append(item)
+        items.append(_monitoring_log_item(log, target_username))
     return items
 
 
@@ -471,7 +493,6 @@ async def crawl_log_results(
         evidence_q = evidence_q.where(EvidenceReport.target_id == log.target_id)
         # Add a small buffer (5 seconds) to account for clock differences between
         # Python-set started_at/completed_at and DB server_default capture_timestamp
-        from datetime import timedelta
         buffer = timedelta(seconds=5)
         start_bound = log.started_at - buffer
         if log.completed_at:
@@ -507,11 +528,47 @@ async def crawl_log_results(
         target_username=target_username,
         platform=log.platform.value,
         success=log.success,
+        comments_found=log.comments_found,
         comments_new=log.comments_new,
         abusive_detected=log.abusive_detected,
+        critical_detected=log.critical_detected,
+        duration_seconds=log.duration_seconds,
+        duration_formatted=_log_duration_formatted(log),
+        pages_crawled=log.pages_crawled or 0,
+        crawl_mode=log.crawl_mode,
+        error_message=log.error_message,
         started_at=log.started_at,
         completed_at=log.completed_at,
+        session_data=log.session_data or {},
         evidence=evidence_items,
+    )
+
+
+@router.get("/logs/{log_id}/export.pdf")
+async def export_crawl_session_pdf(
+    log_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+) -> StreamingResponse:
+    """Download a PDF report for a single crawl session."""
+    detail = await crawl_log_results(log_id, session, _user)
+    try:
+        from reports.crawl_session_pdf import render_crawl_session_pdf
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="PDF export requires reportlab",
+        ) from exc
+
+    payload = detail.model_dump(mode="json")
+    buffer = render_crawl_session_pdf(payload)
+    username = detail.target_username or "target"
+    stamp = detail.started_at.strftime("%Y%m%d_%H%M%S") if detail.started_at else "session"
+    filename = f"patrol_crawl_{username}_{stamp}.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

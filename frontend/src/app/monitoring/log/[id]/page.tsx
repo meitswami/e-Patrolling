@@ -4,20 +4,39 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
-import { PlatformLabel } from '@/components/platforms/PlatformLabel'
 import { AbuseCategoryBadges } from '@/components/abuse/AbuseCategoryBadges'
 import { AbuseExplanationPanel } from '@/components/abuse/AbuseExplanationPanel'
 import { AbusiveCommentText } from '@/components/abuse/AbusiveCommentText'
-import { API_BASE_URL, SEVERITY_CONFIG } from '@/lib/constants'
+import { API_BASE_URL, API_PREFIX, SEVERITY_CONFIG } from '@/lib/constants'
 import { getCrawlLogResults } from '@/lib/api'
-import { isAuthenticated } from '@/lib/auth'
-import type { CrawlLogResults } from '@/lib/api'
+import { isAuthenticated, getToken } from '@/lib/auth'
+import { durationFromTimestamps } from '@/lib/duration'
+import type { CrawlLogResults, CrawlSessionActivity } from '@/lib/api'
 
 function evidenceImageUrl(screenshotPath: string | null): string | null {
   if (!screenshotPath) return null
   const base = API_BASE_URL.replace(/\/$/, '')
   const clean = screenshotPath.replace(/^\/+/, '').replace(/^storage\//, '')
   return `${base}/storage/${clean}`
+}
+
+function downloadSessionPdf(logId: string, filename: string, setError: (m: string | null) => void) {
+  const token = getToken()
+  if (!token) return
+  setError(null)
+  fetch(`${API_BASE_URL}${API_PREFIX}/crawlers/logs/${logId}/export.pdf`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+    .then(async (res) => {
+      if (!res.ok) throw new Error(`PDF export failed (${res.status})`)
+      const blob = await res.blob()
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(a.href)
+    })
+    .catch((err) => setError(err instanceof Error ? err.message : 'PDF export failed'))
 }
 
 export default function CrawlLogResultsPage() {
@@ -27,6 +46,7 @@ export default function CrawlLogResultsPage() {
   const [data, setData] = useState<CrawlLogResults | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -50,21 +70,61 @@ export default function CrawlLogResultsPage() {
     document.getElementById('evidence-section')?.scrollIntoView({ behavior: 'smooth' })
   }
 
+  const duration =
+    data?.duration_formatted ||
+    durationFromTimestamps(data?.started_at, data?.completed_at ?? null, data?.duration_seconds)
+
+  const session = data?.session_data
+  const activityLog = session?.activity_log ?? []
+  const specs = session?.system_specs ?? {}
+  const perf = session?.performance
+  const spikes = perf?.spikes ?? []
+
   return (
     <AppShell
-      title="Crawl results"
+      title="Crawl Session Report"
       subtitle={
         data?.target_username
           ? `@${data.target_username} · ${data.platform}`
           : 'Live extraction proof'
       }
     >
-      <Link
-        href="/monitoring"
-        className="mb-4 inline-block text-sm text-patrol-accent hover:underline"
-      >
-        ← Back to Live Monitoring
-      </Link>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <Link
+          href="/monitoring"
+          className="text-sm text-patrol-accent hover:underline"
+        >
+          ← Live Monitoring
+        </Link>
+        {data?.target_id && (
+          <Link
+            href={`/monitoring/target/${data.target_id}/history`}
+            className="text-sm text-patrol-muted hover:text-patrol-accent"
+          >
+            Crawl Done History
+          </Link>
+        )}
+        {data && (
+          <button
+            type="button"
+            disabled={downloading}
+            onClick={() => {
+              setDownloading(true)
+              const stamp = data.started_at.slice(0, 10)
+              const user = data.target_username || 'target'
+              downloadSessionPdf(
+                logId,
+                `patrol_crawl_${user}_${stamp}.pdf`,
+                setError,
+              )
+              setTimeout(() => setDownloading(false), 1500)
+            }}
+            className="rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1.5 text-xs font-medium text-patrol-accent disabled:opacity-50"
+          >
+            {downloading ? 'Generating PDF…' : 'Download PDF Report'}
+          </button>
+        )}
+      </div>
 
       {error && (
         <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
@@ -76,16 +136,15 @@ export default function CrawlLogResultsPage() {
 
       {data && (
         <>
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Stat label="Status" value={data.success ? 'OK' : 'Failed'} />
+            <Stat label="Duration" value={duration} />
             <Stat
               label="New comments"
               value={String(data.comments_new)}
               onClick={() => {
-                if (data.evidence.length > 0) {
-                  scrollToEvidence()
-                } else {
-                  // Navigate to evidence page filtered by this target
+                if (data.evidence.length > 0) scrollToEvidence()
+                else {
                   const params = new URLSearchParams()
                   if (data.target_username) params.set('target', data.target_username)
                   if (data.target_id) params.set('target_id', data.target_id)
@@ -98,10 +157,8 @@ export default function CrawlLogResultsPage() {
               label="Abusive captured"
               value={String(data.abusive_detected)}
               onClick={() => {
-                if (data.evidence.length > 0) {
-                  scrollToEvidence()
-                } else {
-                  // Navigate to evidence page filtered by this target
+                if (data.evidence.length > 0) scrollToEvidence()
+                else {
                   const params = new URLSearchParams()
                   if (data.target_username) params.set('target', data.target_username)
                   if (data.target_id) params.set('target_id', data.target_id)
@@ -110,11 +167,110 @@ export default function CrawlLogResultsPage() {
               }}
               clickable
             />
-            <Stat
-              label="Run time"
-              value={formatRunTime(data.started_at)}
-            />
+            <Stat label="Run time" value={formatRunTime(data.started_at)} />
           </div>
+
+          {(data.crawl_mode || data.pages_crawled > 0 || data.error_message) && (
+            <div className="mb-6 rounded-xl border border-patrol-border bg-patrol-card p-4 text-sm">
+              <h2 className="font-mono text-xs text-patrol-accent">Session details</h2>
+              <dl className="mt-2 grid gap-1 sm:grid-cols-2">
+                {data.crawl_mode && (
+                  <>
+                    <dt className="text-patrol-muted">Crawl mode</dt>
+                    <dd className="text-patrol-text">{data.crawl_mode.replace(/_/g, ' ')}</dd>
+                  </>
+                )}
+                <dt className="text-patrol-muted">Pages crawled</dt>
+                <dd className="text-patrol-text">{data.pages_crawled}</dd>
+                <dt className="text-patrol-muted">Comments found</dt>
+                <dd className="text-patrol-text">{data.comments_found}</dd>
+                <dt className="text-patrol-muted">Critical detected</dt>
+                <dd className="text-patrol-text">{data.critical_detected}</dd>
+                {data.completed_at && (
+                  <>
+                    <dt className="text-patrol-muted">Completed</dt>
+                    <dd className="text-patrol-text">{formatRunTime(data.completed_at)}</dd>
+                  </>
+                )}
+              </dl>
+              {data.error_message && (
+                <p className="mt-2 text-xs text-red-400">{data.error_message}</p>
+              )}
+            </div>
+          )}
+
+          {Object.keys(specs).length > 0 && (
+            <section className="mb-6 rounded-xl border border-patrol-border bg-patrol-card p-4">
+              <h2 className="font-mono text-sm text-patrol-accent">System specs (at crawl start)</h2>
+              <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                {[
+                  ['Hostname', specs.hostname],
+                  ['OS', `${specs.os} ${specs.os_release || ''}`.trim()],
+                  ['Architecture', specs.architecture],
+                  ['Processor', specs.processor],
+                  ['CPU cores', specs.cpu_count],
+                  ['Python', specs.python_version],
+                  ['RAM total', specs.ram_total_mb ? `${specs.ram_total_mb} MB` : null],
+                  ['Disk total', specs.disk_total_gb ? `${specs.disk_total_gb} GB` : null],
+                ].map(([label, value]) =>
+                  value != null ? (
+                    <div key={String(label)}>
+                      <dt className="text-patrol-muted">{label}</dt>
+                      <dd className="font-mono text-patrol-text">{String(value)}</dd>
+                    </div>
+                  ) : null,
+                )}
+              </dl>
+            </section>
+          )}
+
+          {perf && (
+            <section className="mb-6 rounded-xl border border-patrol-border bg-patrol-card p-4">
+              <h2 className="font-mono text-sm text-patrol-accent">Performance during crawl</h2>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {(['ram_percent', 'cpu_percent', 'swap_percent', 'disk_percent'] as const).map((key) => (
+                  <div key={key} className="rounded-lg border border-patrol-border/60 p-3">
+                    <p className="text-[10px] uppercase text-patrol-muted">
+                      {key.replace('_percent', '')}
+                    </p>
+                    <p className="mt-1 font-mono text-sm text-patrol-text">
+                      Peak {perf.peak?.[key] ?? 0}% · Avg {perf.average?.[key] ?? 0}%
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-patrol-muted">
+                {perf.sample_count ?? 0} samples every {perf.sample_interval_sec ?? 3}s ·{' '}
+                {spikes.length} spike(s) ≥ {perf.spike_threshold_percent ?? 95}%
+              </p>
+              {spikes.length > 0 && (
+                <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-amber-400">
+                  {spikes.map((spike, i) => (
+                    <li key={i}>
+                      {spike.metric} {spike.value}% @{' '}
+                      {spike.timestamp ? new Date(spike.timestamp).toLocaleTimeString() : '—'}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
+          {activityLog.length > 0 && (
+            <section className="mb-6 rounded-xl border border-patrol-border bg-[#0a1628] p-4">
+              <h2 className="font-mono text-sm text-patrol-accent">
+                Saved live activity ({activityLog.length})
+              </h2>
+              <p className="mt-1 text-xs text-patrol-muted">
+                Events captured during this crawl session from Live Monitoring.
+              </p>
+              <div className="mt-3 max-h-72 space-y-1 overflow-y-auto font-mono text-xs">
+                {activityLog.map((entry, i) => (
+                  <ActivityLine key={i} entry={entry} />
+                ))}
+              </div>
+            </section>
+          )}
 
           {data.evidence.length === 0 ? (
             <p className="rounded-xl border border-dashed border-patrol-border p-8 text-center text-sm text-patrol-muted">
@@ -225,6 +381,25 @@ export default function CrawlLogResultsPage() {
         </>
       )}
     </AppShell>
+  )
+}
+
+function ActivityLine({ entry }: { entry: CrawlSessionActivity }) {
+  const ts = entry.timestamp
+    ? new Date(entry.timestamp).toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    : ''
+  return (
+    <div className="flex gap-2 text-patrol-muted">
+      <span className="shrink-0 text-patrol-accent/60">{ts}</span>
+      <span className="text-patrol-text">{entry.message}</span>
+      {entry.detail && (
+        <span className="truncate text-patrol-muted/80">· {entry.detail}</span>
+      )}
+    </div>
   )
 }
 

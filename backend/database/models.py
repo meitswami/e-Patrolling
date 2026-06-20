@@ -391,6 +391,8 @@ class MonitoringLog(Base):
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     crawl_progress: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    crawl_mode: Mapped[Optional[str]] = mapped_column(String(32))
+    session_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
