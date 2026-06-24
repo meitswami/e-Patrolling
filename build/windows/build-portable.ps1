@@ -55,6 +55,10 @@ if (-not $SkipFrontend) {
     } else {
         throw "Next.js export failed - out folder missing"
     }
+    # Restore dev config so `npm run dev` still targets localhost:8000
+    if (Test-Path "next.config.dev.js") {
+        Copy-Item -Force "next.config.dev.js" "next.config.js"
+    }
     Pop-Location
 }
 
@@ -67,11 +71,28 @@ if (-not $SkipObfuscate) {
     & $pip install pyarmor 2>$null
   }
   if (Test-Path $pyarmor) {
-    Write-Host "Obfuscating backend with PyArmor..." -ForegroundColor Yellow
+    $srcCount = (Get-ChildItem -Path $BackendSrc -Recurse -Filter "*.py" -File |
+      Where-Object { $_.FullName -notmatch '\\\.venv\\|\\__pycache__\\' } |
+      Measure-Object).Count
+    Write-Host "Obfuscating backend with PyArmor ($srcCount source files)..." -ForegroundColor Yellow
+    if (Test-Path (Join-Path $BackendSrc ".venv")) {
+      Write-Host "  (excluding backend\.venv - local venv must not be obfuscated)" -ForegroundColor DarkGray
+    }
     Remove-Item -Recurse -Force $BackendBuild -ErrorAction SilentlyContinue
-    & $pyarmor gen -O $BackendBuild -r $BackendSrc --exclude "__pycache__" 2>$null
-    if (Test-Path $BackendBuild) {
-      Write-Host "PyArmor obfuscation applied."
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $pyarmor gen -O $BackendBuild -r $BackendSrc `
+      --exclude "__pycache__" `
+      --exclude "**/.venv/**" `
+      --exclude "**/node_modules/**" 2>&1 | ForEach-Object { Write-Host $_ }
+    $obfExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($obfExit -eq 0 -and (Test-Path (Join-Path $BackendBuild "backend"))) {
+      Write-Host "PyArmor obfuscation applied." -ForegroundColor Green
+    } else {
+      Remove-Item -Recurse -Force $BackendBuild -ErrorAction SilentlyContinue
+      Write-Host "PyArmor failed (exit $obfExit) - continuing with plain backend (PyInstaller bytecode)." -ForegroundColor DarkYellow
+      Write-Host "  Tip: use -SkipObfuscate to skip this step, or remove backend\.venv if obfuscation keeps failing." -ForegroundColor DarkGray
     }
   } else {
     Write-Host "PyArmor not available - shipping compiled bytecode only (PyInstaller)." -ForegroundColor DarkYellow

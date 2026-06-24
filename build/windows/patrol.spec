@@ -10,7 +10,8 @@ REPO = Path(SPECPATH).resolve().parents[1]
 APP_NAME = (REPO / "build" / "windows" / "app_name.txt").read_text(encoding="utf-8").strip()
 ICON_PATH = REPO / "build" / "windows" / "assets" / "shakti-icon.ico"
 VERSION_INFO = REPO / "build" / "windows" / "version_info.txt"
-BACKEND = REPO / "backend"
+BACKEND_OBF = Path(SPECPATH).resolve() / "dist" / "backend-obf" / "backend"
+BACKEND = BACKEND_OBF if BACKEND_OBF.is_dir() else REPO / "backend"
 AI_CONFIGS = REPO / "ai_models" / "configs"
 UI = REPO / "build" / "windows" / "dist-ui"
 STORAGE_SEED = REPO / "storage"

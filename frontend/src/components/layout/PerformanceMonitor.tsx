@@ -103,18 +103,20 @@ function saveSpikes(spikes: SpikeEntry[]) {
 }
 
 export function PerformanceMonitor() {
+  const [mounted, setMounted] = useState(false)
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('perf-monitor-collapsed') === 'true'
-    }
-    return false
-  })
+  const [collapsed, setCollapsed] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [spikes, setSpikes] = useState<SpikeEntry[]>(() => loadSpikes())
+  const [spikes, setSpikes] = useState<SpikeEntry[]>([])
   const [logsExpanded, setLogsExpanded] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastSpikeAtRef = useRef<Record<string, number>>({})
+
+  useEffect(() => {
+    setMounted(true)
+    setCollapsed(localStorage.getItem('perf-monitor-collapsed') === 'true')
+    setSpikes(loadSpikes())
+  }, [])
 
   const recordSpike = useCallback((metric: string, value: number) => {
     const now = Date.now()
@@ -166,23 +168,25 @@ export function PerformanceMonitor() {
   }, [recordSpike])
 
   useEffect(() => {
+    if (!mounted) return
     fetchMetrics()
     intervalRef.current = setInterval(fetchMetrics, 3000) // Poll every 3s
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [fetchMetrics])
+  }, [fetchMetrics, mounted])
 
   useEffect(() => {
+    if (!mounted) return
     localStorage.setItem('perf-monitor-collapsed', String(collapsed))
-  }, [collapsed])
+  }, [collapsed, mounted])
 
   const clearSpikes = () => {
     setSpikes([])
     saveSpikes([])
   }
 
-  if (!metrics && !error) return null
+  if (!mounted || (!metrics && !error)) return null
 
   return (
     <div className="mb-4 rounded-lg border border-patrol-border bg-patrol-card/80 backdrop-blur-sm overflow-hidden transition-all duration-300">

@@ -203,18 +203,20 @@ export default function CrawlLogResultsPage() {
             <section className="mb-6 rounded-xl border border-patrol-border bg-patrol-card p-4">
               <h2 className="font-mono text-sm text-patrol-accent">System specs (at crawl start)</h2>
               <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
-                {[
-                  ['Hostname', specs.hostname],
-                  ['OS', `${specs.os} ${specs.os_release || ''}`.trim()],
-                  ['Architecture', specs.architecture],
-                  ['Processor', specs.processor],
-                  ['CPU cores', specs.cpu_count],
-                  ['Python', specs.python_version],
-                  ['RAM total', specs.ram_total_mb ? `${specs.ram_total_mb} MB` : null],
-                  ['Disk total', specs.disk_total_gb ? `${specs.disk_total_gb} GB` : null],
-                ].map(([label, value]) =>
-                  value != null ? (
-                    <div key={String(label)}>
+                {(
+                  [
+                    ['Hostname', specs.hostname],
+                    ['OS', `${specs.os} ${specs.os_release || ''}`.trim()],
+                    ['Architecture', specs.architecture],
+                    ['Processor', specs.processor],
+                    ['CPU cores', specs.cpu_count],
+                    ['Python', specs.python_version],
+                    ['RAM total', specs.ram_total_mb ? `${specs.ram_total_mb} MB` : null],
+                    ['Disk total', specs.disk_total_gb ? `${specs.disk_total_gb} GB` : null],
+                  ] as [string, string | number | null | undefined][]
+                ).map(([label, value]) =>
+                  value != null && value !== '' ? (
+                    <div key={label}>
                       <dt className="text-patrol-muted">{label}</dt>
                       <dd className="font-mono text-patrol-text">{String(value)}</dd>
                     </div>

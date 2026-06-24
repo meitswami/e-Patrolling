@@ -3,6 +3,7 @@
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { PerformanceMonitor } from './PerformanceMonitor'
+import { ClientOnly } from '@/components/ClientOnly'
 
 interface AppShellProps {
   title: string
@@ -17,7 +18,9 @@ export function AppShell({ title, subtitle, children }: AppShellProps) {
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header title={title} subtitle={subtitle} />
         <main className="flex-1 overflow-auto p-6 animate-fade-in">
-          <PerformanceMonitor />
+          <ClientOnly>
+            <PerformanceMonitor />
+          </ClientOnly>
           {children}
         </main>
       </div>
