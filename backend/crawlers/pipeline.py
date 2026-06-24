@@ -171,7 +171,10 @@ async def run_crawl_for_target(
             from services.crawl_view_state import crawl_view_state
 
             crawl_view_state.start(str(target_id), view_mode=True)
-            crawler_ctor_kwargs["headless"] = False
+            # Headed browser only when explicitly configured (local dev). VPS has no display —
+            # live feed still streams all crawl steps over WebSocket in headless mode.
+            if not settings.CRAWLER_HEADLESS:
+                crawler_ctor_kwargs["headless"] = False
 
         async with sem:
             async with crawler_cls(**crawler_ctor_kwargs) as crawler:
@@ -504,6 +507,22 @@ async def run_crawl_for_target(
                 "abusive_detected": abusive_count,
                 "evidence_ids": evidence_ids_created,
             }
+        try:
+            from websocket.events import broadcast_crawl_activity
+
+            await broadcast_crawl_activity(
+                target_username=target.username,
+                activity_type="crawl_error",
+                message=str(exc)[:500],
+                platform=platform.value,
+            )
+        except Exception:
+            pass
+        if log.id:
+            log.success = False
+            log.error_message = str(exc)[:2000]
+            _mark_log_completed(log)
+            await session.commit()
         raise
     finally:
         try:

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { AbuseCategoryBadges } from '@/components/abuse/AbuseCategoryBadges'
 import { AbuseExplanationPanel } from '@/components/abuse/AbuseExplanationPanel'
 import { AbusiveCommentText } from '@/components/abuse/AbusiveCommentText'
@@ -15,6 +15,7 @@ import {
 } from '@/lib/api'
 import { getToken, isAuthenticated } from '@/lib/auth'
 import { API_BASE_URL } from '@/lib/constants'
+import { useDossierUsernameParam } from '@/lib/route-params'
 
 function severityClass(sev: string): string {
   switch (sev) {
@@ -31,8 +32,7 @@ function severityClass(sev: string): string {
 
 export default function AccusedDossierPage() {
   const router = useRouter()
-  const params = useParams()
-  const username = decodeURIComponent(String(params.username || ''))
+  const username = useDossierUsernameParam()
   const [dossier, setDossier] = useState<AccusedDossier | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -44,7 +44,7 @@ export default function AccusedDossierPage() {
       router.replace('/admin')
       return
     }
-    if (!username) return
+    if (!username || username === '_') return
     getAccusedDossier(username)
       .then(setDossier)
       .catch((err) =>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { PlatformLabel } from '@/components/platforms/PlatformLabel'
 import { AbuseCategoryBadges, abuseCategoriesSummary } from '@/components/abuse/AbuseCategoryBadges'
@@ -16,6 +16,7 @@ import {
   type EvidenceDetail,
 } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
+import { useEvidenceIdParam } from '@/lib/route-params'
 
 function evidenceImageUrl(screenshotPath: string | null): string | null {
   if (!screenshotPath) return null
@@ -26,8 +27,7 @@ function evidenceImageUrl(screenshotPath: string | null): string | null {
 
 export default function EvidenceDetailPage() {
   const router = useRouter()
-  const params = useParams()
-  const id = params.id as string
+  const id = useEvidenceIdParam()
   const user = getUser()
   const canEscalate = user?.role === 'ADMIN' || user?.role === 'ANALYST'
   const canDelete = user?.role === 'ADMIN'
@@ -49,7 +49,7 @@ export default function EvidenceDetailPage() {
       router.replace('/admin')
       return
     }
-    if (!id) return
+    if (!id || id === '_') return
 
     load().catch((err) => {
       setError(err instanceof Error ? err.message : 'Evidence not found')

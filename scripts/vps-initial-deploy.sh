@@ -19,8 +19,10 @@ python -m playwright install --with-deps chromium
 
 cd "$ROOT/frontend"
 cp next.config.hostinger.js next.config.js
-export NEXT_PUBLIC_API_URL="${PUBLIC_URL:-http://187.127.185.243}"
-export NEXT_PUBLIC_WS_URL="${WS_URL:-ws://187.127.185.243}"
+SHAKTI_DOMAIN="${DEPLOY_DOMAIN:-shakti.bojprtest.in}"
+PUBLIC_URL="${PUBLIC_URL:-https://${SHAKTI_DOMAIN}}"
+export NEXT_PUBLIC_API_URL="$PUBLIC_URL"
+export NEXT_PUBLIC_WS_URL="wss://${SHAKTI_DOMAIN}"
 export NEXT_BASE_PATH="${NEXT_BASE_PATH:-}"
 npm ci
 npm run build
@@ -29,43 +31,8 @@ rsync -a --delete out/ /var/www/shakti/
 
 cd "$ROOT"
 cp deploy/nginx-shakti.conf /etc/nginx/sites-available/shakti
-ln -sf /etc/nginx/sites-available/shakti /etc/nginx/sites-enabled/shakti
-
-cat > /etc/nginx/sites-available/shakti-ip <<'NGINX'
-server {
-    listen 80 default_server;
-    server_name 187.127.185.243 _;
-    client_max_body_size 25M;
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 300s;
-    }
-
-    location /ws/ {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-
-    location /health {
-        proxy_pass http://127.0.0.1:5000;
-    }
-
-    location / {
-        root /var/www/shakti;
-        try_files $uri $uri/ $uri.html /index.html;
-    }
-}
-NGINX
-ln -sf /etc/nginx/sites-available/shakti-ip /etc/nginx/sites-enabled/shakti-ip
-rm -f /etc/nginx/sites-enabled/default
+ln -sf /etc/nginx/sites-available/shakti /etc/nginx/sites-enabled/01-shakti
+# Do not bind Shakti to raw IP — other projects use subdomain vhosts under /var/www/
 nginx -t
 systemctl reload nginx
 

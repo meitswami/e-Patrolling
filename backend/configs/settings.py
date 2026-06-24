@@ -51,7 +51,7 @@ def _parse_allowed_origins(value: object) -> List[str]:
         if not raw:
             raise ValueError(
                 "ALLOWED_ORIGINS cannot be empty. Example: "
-                '["https://your-app.vercel.app"] or https://your-app.vercel.app'
+                '["https://your-app.example.com"] or https://your-app.example.com'
             )
         if raw.startswith("["):
             parsed = json.loads(raw)
@@ -60,6 +60,25 @@ def _parse_allowed_origins(value: object) -> List[str]:
             return [str(item).strip() for item in parsed if str(item).strip()]
         return [part.strip() for part in raw.split(",") if part.strip()]
     raise TypeError(f"ALLOWED_ORIGINS must be a string or list, got {type(value).__name__}")
+
+
+def _parse_optional_origins(value: object) -> List[str]:
+    """Like _parse_allowed_origins but allows empty (for optional CORS extras)."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        if raw.startswith("["):
+            parsed = json.loads(raw)
+            if not isinstance(parsed, list):
+                raise ValueError("CORS_EXTRA_ORIGINS JSON must be an array of strings")
+            return [str(item).strip() for item in parsed if str(item).strip()]
+        return [part.strip() for part in raw.split(",") if part.strip()]
+    raise TypeError(f"CORS_EXTRA_ORIGINS must be a string or list, got {type(value).__name__}")
 
 
 class Settings(BaseSettings):
@@ -124,14 +143,14 @@ class Settings(BaseSettings):
         "http://localhost:80",
         "http://127.0.0.1:3000",
     ]
-    # Also allow Vercel preview/production URLs (*.vercel.app) when set (recommended for EC2).
-    CORS_ORIGIN_REGEX: Optional[str] = r"https://([a-z0-9-]+\.)*vercel\.app"
-    # Merged into CORS middleware — ensures production frontend works even if .env omits ALLOWED_ORIGINS.
+    # Optional regex for preview deployments (e.g. *.vercel.app). Leave unset on dedicated VPS.
+    CORS_ORIGIN_REGEX: Optional[str] = None
+    # Optional extra origins (comma-separated or JSON array). Leave empty in production.
     CORS_EXTRA_ORIGINS: Annotated[
         List[str],
         NoDecode,
-        BeforeValidator(_parse_allowed_origins),
-    ] = ["https://e-patrolling.vercel.app"]
+        BeforeValidator(_parse_optional_origins),
+    ] = []
 
     # ── AI Models ─────────────────────────────────────────────
     MODEL_CACHE_DIR: Path = _PROJECT_ROOT / "ai_models" / "cache"
@@ -218,6 +237,8 @@ class Settings(BaseSettings):
     def create_dirs(cls, v: str) -> Path:
         """Auto-create storage directories if they don't exist."""
         path = Path(v)
+        if not path.is_absolute():
+            path = _PROJECT_ROOT / path
         path.mkdir(parents=True, exist_ok=True)
         return path
 

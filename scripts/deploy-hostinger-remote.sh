@@ -63,7 +63,7 @@ if grep -q '^CRAWLER_DEMO_MODE=true' .env; then
   sed -i 's/^CRAWLER_DEMO_MODE=true/CRAWLER_DEMO_MODE=false/' .env
 fi
 
-CORS="${PUBLIC_URL},https://bojprtest.in,https://www.bojprtest.in,https://e-patrolling.vercel.app,http://localhost:3000"
+CORS="${PUBLIC_URL},https://bojprtest.in,https://www.bojprtest.in,http://localhost:3000"
 if grep -q '^ALLOWED_ORIGINS=' .env; then
   sed -i "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=${CORS}|" .env
 fi

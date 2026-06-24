@@ -24,7 +24,7 @@ fi
 cp "$TEMPLATE" .env
 
 # Apply runtime domain (subdomain or path deploy)
-CORS="${PUBLIC_URL},https://bojprtest.in,https://www.bojprtest.in,https://e-patrolling.vercel.app,http://localhost:3000"
+CORS="${PUBLIC_URL},https://bojprtest.in,https://www.bojprtest.in,http://localhost:3000"
 sed -i "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=${CORS}|" .env
 sed -i "s|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=${PUBLIC_URL}|" .env
 sed -i "s|^NEXT_PUBLIC_WS_URL=.*|NEXT_PUBLIC_WS_URL=wss://${DEPLOY_DOMAIN}|" .env

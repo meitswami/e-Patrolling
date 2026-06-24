@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { AbuseCategoryBadges } from '@/components/abuse/AbuseCategoryBadges'
@@ -11,6 +11,7 @@ import { API_BASE_URL, API_PREFIX, SEVERITY_CONFIG } from '@/lib/constants'
 import { getCrawlLogResults } from '@/lib/api'
 import { isAuthenticated, getToken } from '@/lib/auth'
 import { durationFromTimestamps } from '@/lib/duration'
+import { useLogIdParam } from '@/lib/route-params'
 import type { CrawlLogResults, CrawlSessionActivity } from '@/lib/api'
 
 function evidenceImageUrl(screenshotPath: string | null): string | null {
@@ -40,9 +41,8 @@ function downloadSessionPdf(logId: string, filename: string, setError: (m: strin
 }
 
 export default function CrawlLogResultsPage() {
-  const params = useParams()
   const router = useRouter()
-  const logId = params.id as string
+  const logId = useLogIdParam()
   const [data, setData] = useState<CrawlLogResults | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -53,6 +53,7 @@ export default function CrawlLogResultsPage() {
       router.replace('/admin')
       return
     }
+    if (!logId || logId === '_') return
     async function load() {
       try {
         const results = await getCrawlLogResults(logId)

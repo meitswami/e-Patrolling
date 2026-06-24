@@ -1,18 +1,18 @@
 'use client'
 
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { PlatformLabel } from '@/components/platforms/PlatformLabel'
 import { listCrawlLogs, type CrawlLogItem } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { formatCrawlTimestamp, durationFromTimestamps } from '@/lib/duration'
+import { useTargetIdParam } from '@/lib/route-params'
 
 export default function TargetCrawlHistoryPage() {
-  const params = useParams()
   const router = useRouter()
-  const targetId = params.targetId as string
+  const targetId = useTargetIdParam()
   const [logs, setLogs] = useState<CrawlLogItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -34,8 +34,11 @@ export default function TargetCrawlHistoryPage() {
       router.replace('/admin')
       return
     }
+    if (!targetId || targetId === '_' || !/^[0-9a-f-]{36}$/i.test(targetId)) {
+      return
+    }
     load()
-  }, [router, load])
+  }, [router, load, targetId])
 
   const username = logs[0]?.target_username
   const successCount = logs.filter((l) => l.success).length

@@ -128,8 +128,8 @@ export function ViewCrawlingPanel({
         </div>
 
         <div className="border-b border-patrol-border/50 px-4 py-2 text-xs text-patrol-muted">
-          Opens a visible Chromium window on this PC while the live feed below shows each
-          step and any abusive content detected.
+          Live feed below shows each crawl step on the server. A visible Chromium window
+          only opens when the API runs on your PC with headless mode off.
         </div>
 
         <div className="flex flex-wrap gap-2 border-b border-patrol-border px-4 py-3">
