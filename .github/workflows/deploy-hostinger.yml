@@ -28,14 +28,14 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.HOSTINGER_SSH_HOST }}
-          username: ${{ secrets.HOSTINGER_SSH_USER != '' && secrets.HOSTINGER_SSH_USER || 'ubuntu' }}
+          username: ${{ secrets.HOSTINGER_SSH_USER != '' && secrets.HOSTINGER_SSH_USER || 'root' }}
           key: ${{ secrets.HOSTINGER_SSH_KEY }}
           port: ${{ secrets.HOSTINGER_SSH_PORT != '' && secrets.HOSTINGER_SSH_PORT || 22 }}
           script_stop: true
           envs: INSTAGRAM_STATE_B64,INSTAGRAM_META_B64,HOSTINGER_DATABASE_URL,HOSTINGER_JWT_SECRET,DEPLOY_DOMAIN,PUBLIC_URL,NEXT_BASE_PATH
           script: |
             set -e
-            cd ~/e-Patrolling
+            cd /root/e-Patrolling
             export DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-shakti.bojprtest.in}"
             export PUBLIC_URL="${PUBLIC_URL:-https://shakti.bojprtest.in}"
             export NEXT_BASE_PATH="${NEXT_BASE_PATH:-}"

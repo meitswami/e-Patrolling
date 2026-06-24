@@ -11,8 +11,13 @@ NEXT_BASE_PATH="${NEXT_BASE_PATH:-}"
 FRONTEND_OUT="${FRONTEND_OUT:-/var/www/shakti}"
 
 echo "==> Pull latest code"
-git fetch origin main
-git reset --hard origin/main
+if [ -d .git ]; then
+  git fetch origin main
+  git reset --hard origin/main
+  find . -name '*.sh' -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+else
+  echo "WARN: No .git directory — skipping git pull (upload or clone repo first)"
+fi
 
 echo "==> Restore Instagram session (git + optional secrets)"
 mkdir -p storage/sessions storage/logs storage/evidence storage/screenshots
