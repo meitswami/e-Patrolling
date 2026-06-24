@@ -32,8 +32,7 @@ Wait a few minutes, then verify: `ping shakti.bojprtest.in`
 SSH into the VPS (Hostinger hPanel → VPS → Manage → SSH):
 
 ```bash
-ssh root@187.127.185.243
-# or ssh ubuntu@187.127.185.243
+ssh ubuntu@187.127.185.243
 ```
 
 Clone the repo and bootstrap:
@@ -42,15 +41,24 @@ Clone the repo and bootstrap:
 git clone https://github.com/YOUR_ORG/e-Patrolling.git /home/ubuntu/e-Patrolling
 cd /home/ubuntu/e-Patrolling
 sudo bash scripts/setup-hostinger-vps.sh
-sudo -u ubuntu bash scripts/setup-hostinger-env.sh
-sudo -u ubuntu nano /home/ubuntu/e-Patrolling/.env   # set JWT_SECRET_KEY
 ```
 
-Generate JWT secret:
+**Production `.env` (same Supabase DB as former EC2):**
+
+From your PC:
 
 ```bash
-openssl rand -hex 32
+scp deploy/env.production.hostinger ubuntu@187.127.185.243:~/e-Patrolling/.env
 ```
+
+Or on the VPS, copy the example and paste your Supabase pooler URL + JWT:
+
+```bash
+cp deploy/env.production.hostinger.example .env
+nano .env
+```
+
+`deploy/env.production.hostinger` is gitignored (contains secrets). The committed template is `deploy/env.production.hostinger.example`.
 
 ## 3. GitHub secrets (Settings → Secrets and variables → Actions)
 
@@ -60,7 +68,8 @@ openssl rand -hex 32
 | `HOSTINGER_SSH_USER` | `ubuntu` or `root` |
 | `HOSTINGER_SSH_KEY` | Private SSH key (PEM) for deploy |
 | `HOSTINGER_JWT_SECRET` | Same as `.env` JWT_SECRET_KEY |
-| `HOSTINGER_DATABASE_URL` | Optional — Supabase pooler URL if not using local Postgres |
+| `HOSTINGER_DATABASE_URL` | Same Supabase Session pooler URL as `deploy/env.production.hostinger` |
+| `HOSTINGER_JWT_SECRET` | Same as `JWT_SECRET_KEY` in `.env` |
 
 **Optional** (override git-tracked sessions):
 

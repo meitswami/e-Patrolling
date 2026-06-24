@@ -58,7 +58,7 @@ if grep -q '^CRAWLER_DEMO_MODE=true' .env; then
   sed -i 's/^CRAWLER_DEMO_MODE=true/CRAWLER_DEMO_MODE=false/' .env
 fi
 
-CORS="${PUBLIC_URL},https://bojprtest.in,https://www.bojprtest.in"
+CORS="${PUBLIC_URL},https://bojprtest.in,https://www.bojprtest.in,https://e-patrolling.vercel.app,http://localhost:3000"
 if grep -q '^ALLOWED_ORIGINS=' .env; then
   sed -i "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=${CORS}|" .env
 fi
@@ -84,9 +84,9 @@ if [ -n "${HOSTINGER_JWT_SECRET:-}" ]; then
   fi
 fi
 
-if grep -qE 'YOUR-PASSWORD|change_this' .env; then
+if grep -qE 'YOUR_SUPABASE_PASSWORD|YOUR-PASSWORD|change_me_use_openssl' .env; then
   echo "ERROR: .env still has placeholder DATABASE_URL or JWT_SECRET_KEY."
-  echo "Run: nano ~/e-Patrolling/.env"
+  echo "Copy production env: scp deploy/env.production.hostinger ubuntu@HOST:~/e-Patrolling/.env"
   echo "Or set GitHub secrets: HOSTINGER_DATABASE_URL, HOSTINGER_JWT_SECRET"
   exit 1
 fi

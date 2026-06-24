@@ -15,39 +15,29 @@ if [ -f .env ]; then
   exit 0
 fi
 
-if [ ! -f .env.example ]; then
-  echo "ERROR: .env.example not found"
+TEMPLATE="$ROOT/deploy/env.production.hostinger.example"
+if [ ! -f "$TEMPLATE" ]; then
+  echo "ERROR: $TEMPLATE not found"
   exit 1
 fi
 
-cp .env.example .env
+cp "$TEMPLATE" .env
 
-sed -i 's/^ENVIRONMENT=development/ENVIRONMENT=production/' .env
-sed -i 's/^CRAWLER_DEMO_MODE=true/CRAWLER_DEMO_MODE=false/' .env
-sed -i 's/^REDIS_ENABLED=false/REDIS_ENABLED=false/' .env
-
-# Local Postgres on VPS (docker)
-if grep -q '^DATABASE_URL=' .env; then
-  sed -i 's|^DATABASE_URL=.*|DATABASE_URL=postgresql+asyncpg://patrol:patrol_secret@127.0.0.1:5432/patrol_db|' .env
-fi
-sed -i 's/^DATABASE_FORCE_IPV4=.*/DATABASE_FORCE_IPV4=false/' .env
-
-CORS="${PUBLIC_URL},https://bojprtest.in,https://www.bojprtest.in,http://localhost:3000"
-if grep -q '^ALLOWED_ORIGINS=' .env; then
-  sed -i "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=${CORS}|" .env
-else
-  echo "ALLOWED_ORIGINS=${CORS}" >> .env
-fi
+# Apply runtime domain (subdomain or path deploy)
+CORS="${PUBLIC_URL},https://bojprtest.in,https://www.bojprtest.in,https://e-patrolling.vercel.app,http://localhost:3000"
+sed -i "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=${CORS}|" .env
+sed -i "s|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=${PUBLIC_URL}|" .env
+sed -i "s|^NEXT_PUBLIC_WS_URL=.*|NEXT_PUBLIC_WS_URL=wss://${DEPLOY_DOMAIN}|" .env
 
 echo "NEXT_PUBLIC_API_URL=${PUBLIC_URL}" > frontend/.env.production.local
 echo "NEXT_PUBLIC_WS_URL=wss://${DEPLOY_DOMAIN}" >> frontend/.env.production.local
 
-echo "==> Created $ROOT/.env for Hostinger"
+echo "==> Created $ROOT/.env from deploy/env.production.hostinger.example"
 echo ""
-echo "REQUIRED — edit before first deploy:"
+echo "REQUIRED — set real secrets before starting the API:"
 echo "  nano .env"
-echo "  1. JWT_SECRET_KEY  (openssl rand -hex 32)"
-echo "  2. DATABASE_URL    (default: local Docker Postgres)"
-echo "  3. Or use Supabase pooler URL if you prefer cloud DB"
+echo "  1. DATABASE_URL  (Supabase Session pooler — copy from deploy/env.production.hostinger)"
+echo "  2. JWT_SECRET_KEY  (openssl rand -hex 32)"
 echo ""
-echo "Instagram session: storage/sessions/ is deployed from git or GitHub secrets."
+echo "Or copy your full production file from your PC:"
+echo "  scp deploy/env.production.hostinger ubuntu@187.127.185.243:~/e-Patrolling/.env"
