@@ -1,0 +1,58 @@
+name: Sync Instagram sessions
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - storage/sessions/**
+  workflow_dispatch:
+
+jobs:
+  sync-to-hostinger:
+    runs-on: ubuntu-latest
+    if: ${{ vars.HOSTINGER_DEPLOY_ENABLED != 'false' }}
+
+    steps:
+      - name: Push session files to VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER || 'ubuntu' }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -e
+            cd ~/e-Patrolling
+            git fetch origin main
+            git checkout origin/main -- storage/sessions/instagram_state.json storage/sessions/instagram_meta.json 2>/dev/null || true
+            chmod 600 storage/sessions/*.json 2>/dev/null || true
+            if [ -f storage/sessions/instagram_state.json ]; then
+              echo "Session synced for $(jq -r .username storage/sessions/instagram_meta.json 2>/dev/null || echo unknown)"
+              pm2 restart backend 2>/dev/null || true
+            else
+              echo "No session files in repo yet"
+            fi
+
+  sync-to-ec2:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.EC2_HOST != '' }}
+
+    steps:
+      - name: Push session files to EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -e
+            cd ~/e-Patrolling
+            git fetch origin main
+            git checkout origin/main -- storage/sessions/instagram_state.json storage/sessions/instagram_meta.json 2>/dev/null || true
+            chmod 600 storage/sessions/*.json 2>/dev/null || true
+            pm2 restart backend 2>/dev/null || true
+            echo "EC2 session sync done"

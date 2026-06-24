@@ -1,0 +1,42 @@
+name: Deploy to Hostinger VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hostinger
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: vars.HOSTINGER_DEPLOY_ENABLED != 'false'
+
+    steps:
+      - name: Deploy Shakti to Hostinger VPS
+        env:
+          INSTAGRAM_STATE_B64: ${{ secrets.INSTAGRAM_STATE_B64 }}
+          INSTAGRAM_META_B64: ${{ secrets.INSTAGRAM_META_B64 }}
+          HOSTINGER_DATABASE_URL: ${{ secrets.HOSTINGER_DATABASE_URL }}
+          HOSTINGER_JWT_SECRET: ${{ secrets.HOSTINGER_JWT_SECRET }}
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+          NEXT_BASE_PATH: ${{ vars.NEXT_BASE_PATH }}
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER != '' && secrets.HOSTINGER_SSH_USER || 'ubuntu' }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT != '' && secrets.HOSTINGER_SSH_PORT || 22 }}
+          script_stop: true
+          envs: INSTAGRAM_STATE_B64,INSTAGRAM_META_B64,HOSTINGER_DATABASE_URL,HOSTINGER_JWT_SECRET,DEPLOY_DOMAIN,PUBLIC_URL,NEXT_BASE_PATH
+          script: |
+            set -e
+            cd ~/e-Patrolling
+            export DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-shakti.bojprtest.in}"
+            export PUBLIC_URL="${PUBLIC_URL:-https://shakti.bojprtest.in}"
+            export NEXT_BASE_PATH="${NEXT_BASE_PATH:-}"
+            bash scripts/deploy-hostinger-remote.sh

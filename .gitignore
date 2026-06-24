@@ -8,7 +8,9 @@ node_modules/
 frontend/.next/
 frontend/out/
 .env.local
-storage/
+storage/*
+!storage/sessions/
+!storage/sessions/**
 ai_models/cache/
 .DS_Store
 .code-bridge/
