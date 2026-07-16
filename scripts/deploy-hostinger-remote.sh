@@ -126,16 +126,19 @@ if [ -f deploy/nginx-shakti.conf ]; then
 fi
 
 chmod +x scripts/start-backend.sh
+# Only manage Shakti — never touch CapStack / other PM2 apps
+pm2 delete shakti-backend 2>/dev/null || true
 pm2 delete backend 2>/dev/null || true
 pm2 start ecosystem.config.cjs
 pm2 save
 
-echo "==> Health check"
+BACKEND_PORT="${BACKEND_PORT:-5100}"
+echo "==> Health check (127.0.0.1:${BACKEND_PORT})"
 ok=0
 for i in $(seq 1 18); do
-  if curl -sf http://127.0.0.1:5000/health >/dev/null; then
+  if curl -sf "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null; then
     ok=1
-    curl -s http://127.0.0.1:5000/health
+    curl -s "http://127.0.0.1:${BACKEND_PORT}/health"
     echo ""
     break
   fi
@@ -143,7 +146,7 @@ for i in $(seq 1 18); do
   sleep 5
 done
 if [ "$ok" -ne 1 ]; then
-  pm2 logs backend --lines 50 --nostream
+  pm2 logs shakti-backend --lines 50 --nostream
   exit 1
 fi
 

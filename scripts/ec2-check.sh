@@ -22,12 +22,12 @@ echo "=== PM2 ==="
 pm2 status backend 2>/dev/null || pm2 status
 
 echo ""
-echo "=== Port 5000 ==="
-ss -tlnp 2>/dev/null | grep ':5000' || echo "nothing listening on 5000 (502 Bad Gateway cause)"
+echo "=== Port 5100 (Shakti API) ==="
+ss -tlnp 2>/dev/null | grep ':5100' || echo "nothing listening on 5100 (502 Bad Gateway cause)"
 
 echo ""
 echo "=== Health (local) ==="
-curl -sS -m 5 http://127.0.0.1:5000/health || echo "health check FAILED"
+curl -sS -m 5 http://127.0.0.1:5100/health || echo "health check FAILED"
 
 echo ""
 echo "=== PM2 logs (last 25 lines) ==="

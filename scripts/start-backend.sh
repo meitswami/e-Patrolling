@@ -32,4 +32,6 @@ for envfile in "$ROOT/.env" "$ROOT/backend/.env"; do
 done
 
 cd "$ROOT/backend"
-exec uvicorn main:app --host 0.0.0.0 --port 5000
+# Dedicated host port for Shakti on shared VPS (avoid CapStack :3000, TravelCRM, Hermes).
+PORT="${BACKEND_PORT:-5100}"
+exec uvicorn main:app --host 0.0.0.0 --port "$PORT"
