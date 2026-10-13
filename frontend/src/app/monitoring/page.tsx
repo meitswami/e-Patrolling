@@ -133,6 +133,7 @@ function MonitoringPageContent() {
           </Link>
           <Link
             href={`/monitoring/target/${targetFilter}/history`}
+            prefetch={false}
             className="rounded-lg border border-patrol-accent/40 bg-patrol-accent/10 px-3 py-1.5 text-xs text-patrol-accent hover:bg-patrol-accent/20 transition"
           >
             Crawl Done History

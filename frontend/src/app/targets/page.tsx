@@ -441,6 +441,7 @@ export default function TargetsPage() {
                   <>
                     <Link
                       href={`/monitoring/target/${item.id}/history`}
+                      prefetch={false}
                       className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-300 hover:bg-sky-500/20"
                       title="View all past crawl sessions for this target"
                     >

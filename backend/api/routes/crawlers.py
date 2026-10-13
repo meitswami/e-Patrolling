@@ -138,27 +138,6 @@ async def crawler_status(
     )
 
 
-@router.post("/start/{platform}/{target_id}", response_model=CrawlTriggerResponse)
-async def start_crawl_by_platform(
-    platform: str,
-    target_id: UUID,
-    session: AsyncSession = Depends(get_session),
-    _user: User = Depends(require_analyst),
-) -> CrawlTriggerResponse:
-    """Alias route matching task_tracker spec (platform in path)."""
-    result = await session.execute(select(TargetAccount).where(TargetAccount.id == target_id))
-    target = result.scalar_one_or_none()
-    if not target:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
-    if target.platform.value != platform.lower():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Target platform is {target.platform.value}, not {platform}",
-        )
-    mode = await schedule_crawl_target(target_id, run_inline_if_no_redis=True)
-    return CrawlTriggerResponse(status=mode, target_id=target_id, message=f"Crawl {mode}")
-
-
 @router.post("/start/{target_id}", response_model=CrawlTriggerResponse)
 async def start_crawl_target(
     target_id: UUID,
@@ -246,6 +225,33 @@ async def start_view_historical_crawl_target(
         target_id=target_id,
         message=f"Historical view crawl {mode}",
     )
+
+
+# IMPORTANT: this platform-prefixed alias is declared AFTER the two
+# /start/{target_id}/view routes above. Both patterns have three path
+# segments (start/X/Y), so Starlette matches them in declaration order.
+# If this route came first, `/start/<uuid>/view` would bind
+# platform=<uuid>, target_id="view" and FastAPI would 422 trying to parse
+# "view" as a UUID ("invalid character: found 'v' at 1").
+@router.post("/start/{platform}/{target_id}", response_model=CrawlTriggerResponse)
+async def start_crawl_by_platform(
+    platform: str,
+    target_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_analyst),
+) -> CrawlTriggerResponse:
+    """Alias route matching task_tracker spec (platform in path)."""
+    result = await session.execute(select(TargetAccount).where(TargetAccount.id == target_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+    if target.platform.value != platform.lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Target platform is {target.platform.value}, not {platform}",
+        )
+    mode = await schedule_crawl_target(target_id, run_inline_if_no_redis=True)
+    return CrawlTriggerResponse(status=mode, target_id=target_id, message=f"Crawl {mode}")
 
 
 @router.post("/run/{target_id}/view", response_model=CrawlResultSummary)

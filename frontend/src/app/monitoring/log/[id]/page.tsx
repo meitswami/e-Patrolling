@@ -100,6 +100,7 @@ export default function CrawlLogResultsPage() {
         {data?.target_id && (
           <Link
             href={`/monitoring/target/${data.target_id}/history`}
+            prefetch={false}
             className="text-sm text-patrol-muted hover:text-patrol-accent"
           >
             Crawl Done History
