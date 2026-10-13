@@ -37,4 +37,4 @@ du -sh "$ROOT/storage/evidence" "$ROOT/storage/screenshots"
 echo "==> Restart backend"
 cd "$ROOT" && pm2 restart backend
 
-echo "Done. Test: curl -sI https://shakti.bojprtest.in/storage/evidence/instagram/..."
+echo "Done. Test: curl -sI https://shakti.meitcybersolutions.com/storage/evidence/instagram/..."

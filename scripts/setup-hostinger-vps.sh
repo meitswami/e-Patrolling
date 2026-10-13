@@ -14,7 +14,7 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 APP_USER="${APP_USER:-ubuntu}"
 APP_DIR="${APP_DIR:-/home/${APP_USER}/e-Patrolling}"
-DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-shakti.bojprtest.in}"
+DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-shakti.meitcybersolutions.com}"
 
 echo "==> Installing system packages"
 apt-get update -qq

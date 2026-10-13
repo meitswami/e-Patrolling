@@ -1,4 +1,4 @@
-# Hostinger VPS + bojprtest.in/shakti deployment
+# Hostinger VPS + meitcybersolutions.com/shakti deployment
 
 Deploy **Shakti** to your Hostinger KVM VPS (`187.127.185.243`) with GitHub Actions. Instagram sessions in `storage/sessions/` are tracked in git and synced on every deploy.
 
@@ -11,21 +11,21 @@ Deploy **Shakti** to your Hostinger KVM VPS (`187.127.185.243`) with GitHub Acti
 | Postgres | Docker on VPS (`patrol_postgres`) or Supabase |
 | Instagram session | `storage/sessions/*.json` in git |
 
-**Recommended URL:** `https://shakti.bojprtest.in`  
-Path-based `https://bojprtest.in/shakti/` is supported — set repo variable `NEXT_BASE_PATH=/shakti` and uncomment the path block in `deploy/nginx-shakti.conf`.
+**Recommended URL:** `https://shakti.meitcybersolutions.com`  
+Path-based `https://meitcybersolutions.com/shakti/` is supported — set repo variable `NEXT_BASE_PATH=/shakti` and uncomment the path block in `deploy/nginx-shakti.conf`.
 
-## 1. DNS (bojprtest.in account)
+## 1. DNS (meitcybersolutions.com account)
 
-In the **other** Hostinger account that owns `bojprtest.in`:
+In the **other** Hostinger account that owns `meitcybersolutions.com`:
 
 1. DNS zone → add **A record**
    - Name: `shakti`
    - Points to: `187.127.185.243`
    - TTL: 300
 
-Wait a few minutes, then verify: `ping shakti.bojprtest.in`
+Wait a few minutes, then verify: `ping shakti.meitcybersolutions.com`
 
-> `bojprtest.in/shakti/` on shared hosting shows the default Hostinger page until you either point the subdomain to the VPS (above) or upload a static build to `public_html/shakti/`. The automated workflow deploys to the **VPS**, not shared hosting FTP.
+> `meitcybersolutions.com/shakti/` on shared hosting shows the default Hostinger page until you either point the subdomain to the VPS (above) or upload a static build to `public_html/shakti/`. The automated workflow deploys to the **VPS**, not shared hosting FTP.
 
 ## 2. One-time VPS setup
 
@@ -83,8 +83,8 @@ nano .env
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `HOSTINGER_DEPLOY_ENABLED` | `true` | Set `false` to skip Hostinger deploy |
-| `DEPLOY_DOMAIN` | `shakti.bojprtest.in` | Public hostname |
-| `PUBLIC_URL` | `https://shakti.bojprtest.in` | CORS + frontend API URL |
+| `DEPLOY_DOMAIN` | `shakti.meitcybersolutions.com` | Public hostname |
+| `PUBLIC_URL` | `https://shakti.meitcybersolutions.com` | CORS + frontend API URL |
 | `NEXT_BASE_PATH` | *(empty)* | Set `/shakti` for path-based deploy |
 
 ## 5. Instagram sessions in git
@@ -110,7 +110,7 @@ After DNS works:
 
 ```bash
 sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d shakti.bojprtest.in
+sudo certbot --nginx -d shakti.meitcybersolutions.com
 ```
 
 Update `PUBLIC_URL` / CORS to `https://`.
@@ -125,7 +125,7 @@ bash scripts/deploy-hostinger-remote.sh
 ```
 
 Health: `curl http://127.0.0.1:5000/health`  
-Public: `https://shakti.bojprtest.in/admin`
+Public: `https://shakti.meitcybersolutions.com/admin`
 
 ## Workflows
 

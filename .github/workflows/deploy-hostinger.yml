@@ -36,7 +36,7 @@ jobs:
           script: |
             set -e
             cd /root/e-Patrolling
-            export DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-shakti.bojprtest.in}"
-            export PUBLIC_URL="${PUBLIC_URL:-https://shakti.bojprtest.in}"
+            export DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-shakti.meitcybersolutions.com}"
+            export PUBLIC_URL="${PUBLIC_URL:-https://shakti.meitcybersolutions.com}"
             export NEXT_BASE_PATH="${NEXT_BASE_PATH:-}"
             bash scripts/deploy-hostinger-remote.sh

@@ -2,7 +2,7 @@
 # Rebuild Shakti frontend for production subdomain (run on VPS after DNS + SSL).
 set -euo pipefail
 ROOT="/root/e-Patrolling"
-DOMAIN="${SHAKTI_DOMAIN:-shakti.bojprtest.in}"
+DOMAIN="${SHAKTI_DOMAIN:-shakti.meitcybersolutions.com}"
 PUBLIC_URL="https://${DOMAIN}"
 
 cd "$ROOT/frontend"

@@ -19,7 +19,7 @@ python -m playwright install --with-deps chromium
 
 cd "$ROOT/frontend"
 cp next.config.hostinger.js next.config.js
-SHAKTI_DOMAIN="${DEPLOY_DOMAIN:-shakti.bojprtest.in}"
+SHAKTI_DOMAIN="${DEPLOY_DOMAIN:-shakti.meitcybersolutions.com}"
 PUBLIC_URL="${PUBLIC_URL:-https://${SHAKTI_DOMAIN}}"
 export NEXT_PUBLIC_API_URL="$PUBLIC_URL"
 export NEXT_PUBLIC_WS_URL="wss://${SHAKTI_DOMAIN}"

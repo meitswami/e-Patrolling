@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-shakti.bojprtest.in}"
+DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-shakti.meitcybersolutions.com}"
 PUBLIC_URL="https://${DEPLOY_DOMAIN}"
 
 if [ -f .env ]; then
@@ -24,7 +24,7 @@ fi
 cp "$TEMPLATE" .env
 
 # Apply runtime domain (subdomain or path deploy)
-CORS="${PUBLIC_URL},https://bojprtest.in,https://www.bojprtest.in,http://localhost:3000"
+CORS="${PUBLIC_URL},http://localhost:3000"
 sed -i "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=${CORS}|" .env
 sed -i "s|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=${PUBLIC_URL}|" .env
 sed -i "s|^NEXT_PUBLIC_WS_URL=.*|NEXT_PUBLIC_WS_URL=wss://${DEPLOY_DOMAIN}|" .env
