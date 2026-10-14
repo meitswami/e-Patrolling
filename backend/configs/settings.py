@@ -197,6 +197,12 @@ class Settings(BaseSettings):
     HISTORICAL_CRAWL_COMMENT_SCROLL_ROUNDS: int = 10
     HISTORICAL_CRAWL_POST_DELAY_SEC: float = 2.0
     HISTORICAL_CRAWL_PROFILE_SCROLL_DELAY_SEC: float = 1.5
+    # Regular (non-historical) "Run Crawl": how many of the latest posts to open
+    # and read comments on. The profile page alone shows no comments, so a value
+    # of 0 would collect nothing. Keep small for a fast recent-activity pass;
+    # "Crawl History" is the deep mode.
+    REGULAR_CRAWL_POSTS: int = 3
+    REGULAR_CRAWL_MAX_COMMENTS_PER_POST: int = 50
     WEEKLY_REPORT_EXPORT_ENABLED: bool = True
     WEEKLY_REPORT_DAY: str = "mon"
     WEEKLY_REPORT_HOUR: int = 6

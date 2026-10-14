@@ -15,8 +15,19 @@ from services.crawl_checkpoint import extract_post_id
 
 _POST_PATH = re.compile(r"/(?:p|reel)/([A-Za-z0-9_-]+)/?")
 
-# Instagram UI strings for expanding the full comment thread (EN + common variants)
-_EXPAND_LABELS = (
+# Instagram UI strings for expanding the full comment thread (EN + common variants).
+# Hidden-comment toggles come FIRST: Instagram collapses comments it flags as
+# "offensive or spam" behind a "See/View hidden comments" control, and those are
+# exactly the abusive comments this platform exists to detect. They must be
+# revealed before the thread is parsed or they never enter the DOM.
+_HIDDEN_LABELS = (
+    "See hidden comments",
+    "View hidden comments",
+    "See hidden comment",
+    "View hidden comment",
+    "छिपी हुई टिप्पणियाँ देखें",
+)
+_EXPAND_LABELS = _HIDDEN_LABELS + (
     "View all comments",
     "View more comments",
     "Load more comments",
@@ -29,6 +40,11 @@ _EXPAND_LABELS = (
     "और टिप्पणियाँ देखें",
     "और देखें",
 )
+
+# Descriptive, non-clickable text that sits next to the hidden-comments toggle
+# ("These comments were hidden because they may be offensive or spam."). Never
+# treat it as a button — matching it would waste a click and can swallow errors.
+_NON_CLICKABLE_HINTS = ("were hidden because", "may be offensive")
 
 
 def _normalize_post_url(href: str, username: str) -> str | None:
@@ -81,10 +97,20 @@ async def _expand_comment_thread(page, max_rounds: int) -> int:
                 if not await btn.is_visible(timeout=400):
                     btn = page.get_by_text(label, exact=False).first
                 if await btn.is_visible(timeout=400):
+                    # Guard: never click the descriptive "these comments were
+                    # hidden because…" paragraph that sits beside the toggle.
+                    try:
+                        txt = ((await btn.inner_text()) or "").lower()
+                    except Exception:
+                        txt = ""
+                    if any(h in txt for h in _NON_CLICKABLE_HINTS):
+                        continue
                     await btn.click()
                     clicks += 1
                     clicked_this_round = True
-                    await asyncio.sleep(0.8)
+                    # Hidden-comment reveals are slower to render than a plain
+                    # "load more"; give them a touch longer to populate the DOM.
+                    await asyncio.sleep(1.2 if label in _HIDDEN_LABELS else 0.8)
             except Exception:
                 continue
         await _scroll_comment_panel(page, rounds=2, delay_sec=0.6)

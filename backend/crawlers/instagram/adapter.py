@@ -433,8 +433,12 @@ class InstagramCrawler(BaseCrawler):
                     crawl_target_id=crawl_target_id,
                 )
             else:
-                comments = await self.crawl_comments(target_username, post_url, max_comments)
-                pages = 1
+                comments, pages = await self._crawl_regular(
+                    target_username,
+                    max_comments=max_comments,
+                    known_hashes=known_hashes,
+                    crawl_target_id=crawl_target_id,
+                )
 
             monitor = CommentMonitor(known_hashes)
             new_comments = monitor.filter_new(comments)
@@ -459,6 +463,77 @@ class InstagramCrawler(BaseCrawler):
                 error=str(exc),
                 duration_seconds=duration,
             )
+
+    async def _crawl_regular(
+        self,
+        target_username: str,
+        *,
+        max_comments: int,
+        known_hashes: Optional[set[str]] = None,
+        crawl_target_id: Optional[str] = None,
+    ) -> tuple[List[CrawledComment], int]:
+        """
+        Fast recent-activity pass: open the latest few posts and read their
+        comments (hidden comments included). The profile page itself carries no
+        comments, so the old "scrape the profile HTML" approach could never see
+        abuse — it lives on the individual posts, often behind Instagram's
+        "See hidden comments" toggle. Falls back to the profile page only if no
+        posts can be found.
+        """
+        from crawlers.instagram.historical import collect_post_urls, crawl_post_comments
+
+        if not self._page:
+            raise RuntimeError("Browser session not initialized")
+
+        await self._login_if_needed()
+
+        max_posts = max(1, settings.REGULAR_CRAWL_POSTS)
+        per_post = settings.REGULAR_CRAWL_MAX_COMMENTS_PER_POST
+        known = known_hashes or set()
+
+        post_urls = await collect_post_urls(
+            self._page,
+            target_username,
+            max_posts=max_posts,
+            scroll_rounds=2,
+            crawl_target_id=crawl_target_id,
+        )
+
+        if not post_urls:
+            self.logger.warning(
+                "Regular crawl @%s: no posts found — falling back to profile page",
+                target_username,
+            )
+            comments = await self.crawl_comments(
+                target_username,
+                f"https://www.instagram.com/{target_username}/",
+                max_comments,
+            )
+            return comments, 1
+
+        collected: List[CrawledComment] = []
+        pages = 0
+        for post_url in post_urls:
+            try:
+                outcome = await crawl_post_comments(
+                    self._page,
+                    post_url,
+                    target_username,
+                    per_post,
+                    self.rate_limit_wait,
+                    known_hashes=known,
+                    incremental=bool(known),
+                    crawl_target_id=crawl_target_id,
+                )
+                collected.extend(outcome.comments)
+                pages += 1
+            except Exception as exc:
+                self.logger.debug("Regular crawl: post %s failed: %s", post_url, exc)
+            if len(collected) >= max_comments:
+                break
+            await self.rate_limit_wait(settings.HISTORICAL_CRAWL_POST_DELAY_SEC)
+
+        return collected[:max_comments], max(pages, 1)
 
     async def _crawl_historical(
         self,
