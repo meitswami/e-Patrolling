@@ -65,3 +65,4 @@ async def run_pending_migrations(engine: AsyncEngine) -> None:
     await apply_migration_file(engine, "006_evidence_verification.sql")
     await apply_migration_file(engine, "007_crawl_session_metadata.sql")
     await apply_migration_file(engine, "008_discovery_schedules.sql")
+    await apply_migration_file(engine, "009_profile_intelligence.sql")

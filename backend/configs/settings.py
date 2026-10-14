@@ -203,6 +203,10 @@ class Settings(BaseSettings):
     # "Crawl History" is the deep mode.
     REGULAR_CRAWL_POSTS: int = 3
     REGULAR_CRAWL_MAX_COMMENTS_PER_POST: int = 50
+    # Profile intelligence: observe the monitored account's own public profile
+    # on each crawl and record identity changes (name/bio/verification). Off =
+    # no extra profile lookup per crawl.
+    PROFILE_INTELLIGENCE_ENABLED: bool = True
     WEEKLY_REPORT_EXPORT_ENABLED: bool = True
     WEEKLY_REPORT_DAY: str = "mon"
     WEEKLY_REPORT_HOUR: int = 6

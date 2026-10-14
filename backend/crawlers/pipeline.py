@@ -455,6 +455,41 @@ async def run_crawl_for_target(
                     log.crawl_progress = crawl_result.crawl_progress
                     await save_target_checkpoint(session, checkpoint)
 
+                # Profile intelligence: observe the subject's OWN public profile
+                # and record identity changes (name/bio/verification) over time.
+                # Best effort — never fail a crawl because this couldn't run.
+                if settings.PROFILE_INTELLIGENCE_ENABLED:
+                    try:
+                        from services.profile_intelligence import record_profile_observation
+                        from services.profile_lookup import lookup_profile
+
+                        info = await lookup_profile(platform.value, target.username)
+                        if info and getattr(info, "found", False):
+                            observed = {
+                                "display_name": info.full_name,
+                                "bio": info.bio,
+                                "follower_count": info.followers,
+                                "following_count": info.following,
+                                "posts_count": info.posts_count,
+                                "is_verified": info.is_verified,
+                                "is_private": info.is_private,
+                            }
+                            tracked = await record_profile_observation(
+                                session, target.id, observed
+                            )
+                            if tracked:
+                                logger.info(
+                                    "Profile change(s) on @%s: %s",
+                                    target.username,
+                                    ", ".join(c["field"] for c in tracked),
+                                )
+                    except Exception as exc:
+                        logger.debug(
+                            "Profile observation skipped for @%s: %s",
+                            target.username,
+                            exc,
+                        )
+
                 await session.commit()
 
                 from websocket.events import broadcast_crawl_completed
